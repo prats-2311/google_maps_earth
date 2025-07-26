@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Visualization - Uttar Pradesh</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <!-- Fallback mechanism if the page doesn't load within 30 seconds -->
+    <script>
+        // Set a timeout to redirect to the fallback page if the app doesn't load
+        const loadTimeout = setTimeout(function() {
+            window.location.href = '/fallback.html';
+        }, 30000);
+        
+        // Function to cancel the timeout if the app loads successfully
+        window.appLoaded = function() {
+            clearTimeout(loadTimeout);
+            console.log("App loaded successfully, fallback timeout cleared");
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h1>Climate Visualization</h1>
+            <h2>Uttar Pradesh, India</h2>
+            
+            <div class="control-panel">
+                <div class="time-lapse-controls">
+                    <h3>Historical Temperature</h3>
+                    <div class="slider-container">
+                        <label for="year-slider">Year: <span id="selected-year">2020</span></label>
+                        <input type="range" id="year-slider" min="1980" max="2023" value="2020">
+                    </div>
+                    <div class="legend">
+                        <div class="legend-gradient"></div>
+                        <div class="legend-labels">
+                            <span>20°C</span>
+                            <span>35°C</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="prediction-controls">
+                    <h3>Future Prediction</h3>
+                    <button id="predict-btn">Predict Future Temperatures</button>
+                    <div id="prediction-results" class="hidden">
+                        <div class="prediction-item">
+                            <span class="year">2040:</span>
+                            <span id="temp-2040" class="temp"></span>
+                        </div>
+                        <div class="prediction-item">
+                            <span class="year">2050:</span>
+                            <span id="temp-2050" class="temp"></span>
+                        </div>
+                        <div class="prediction-item">
+                            <span class="year">2060:</span>
+                            <span id="temp-2060" class="temp"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="air-quality-panel hidden" id="air-quality-panel">
+                    <h3>Current Air Quality</h3>
+                    <div class="aqi-display">
+                        <div class="aqi-value">
+                            <span>AQI: </span>
+                            <span id="aqi-value"></span>
+                        </div>
+                        <div class="aqi-category" id="aqi-category"></div>
+                    </div>
+                </div>
+                
+                <div class="solutions-panel">
+                    <h3>Solutions</h3>
+                    <button id="show-solar-btn">Show Solar Potential</button>
+                    <button id="show-cooling-zones-btn">Show Cooling Zones</button>
+                </div>
+                
+                <div class="immersive-panel hidden" id="immersive-panel">
+                    <button id="immersive-view-btn">View Immersive Impact</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="map"></div>
+        
+        <div id="immersive-overlay" class="hidden">
+            <button id="close-immersive-btn">×</button>
+            <div id="immersive-content"></div>
+        </div>
+        
+        <div id="loading-spinner">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading...</div>
+        </div>
+        
+        <div id="error-message" class="hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: #fce8e6; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); max-width: 80%; text-align: center;">
+            <h3 style="color: #d93025; margin-top: 0;">Error Loading Map</h3>
+            <p id="error-text">There was a problem loading the map. Please try refreshing the page.</p>
+            <div>
+                <button onclick="location.reload()" style="background-color: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;">Refresh Page</button>
+                <button onclick="window.location.href='/test'" style="background-color: #5f6368; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer;">Go to Test Page</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 
+    To get a Google Maps API key:
+    1. Go to https://console.cloud.google.com/
+    2. Create a project or select your existing project
+    3. Enable the following APIs:
+       - Maps JavaScript API
+       - Places API
+       - Distance Matrix API
+    4. Create an API key and replace the placeholder below
+    -->
+    <!-- Using the provided Google Maps API key -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBR5_tFhPYuUTaaNgvPBbSzy8VnPSZTJNo&libraries=places" onerror="document.getElementById('error-message').classList.remove('hidden'); document.getElementById('error-text').textContent = 'Failed to load Google Maps API. Please check your API key and internet connection.';"></script>
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

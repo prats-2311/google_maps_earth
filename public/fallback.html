@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Visualization - Fallback Page</title>
+    <style>
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #1a73e8;
+        }
+        .card {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .error-card {
+            background-color: #fce8e6;
+            border-color: #d93025;
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #1765cc;
+        }
+        pre {
+            background-color: #f1f3f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .steps {
+            margin-top: 20px;
+        }
+        .steps li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Climate Visualization - Fallback Page</h1>
+    
+    <div class="card error-card">
+        <h2>Application Loading Issue</h2>
+        <p>The main application is having trouble loading. This could be due to one of the following reasons:</p>
+        <ul>
+            <li>Earth Engine authentication issue</li>
+            <li>Network connectivity problem</li>
+            <li>Google Maps API key restriction</li>
+            <li>Browser compatibility issue</li>
+        </ul>
+    </div>
+    
+    <div class="card">
+        <h2>Try the Test Page</h2>
+        <p>You can use our test page to diagnose the specific issue:</p>
+        <a href="/test"><button>Go to Test Page</button></a>
+    </div>
+    
+    <div class="card">
+        <h2>Troubleshooting Steps</h2>
+        <ol class="steps">
+            <li>
+                <strong>Check Earth Engine Authentication:</strong>
+                <p>Run the test script to verify Earth Engine connection:</p>
+                <pre>node test-connection.js</pre>
+            </li>
+            <li>
+                <strong>Verify Google Maps API Key:</strong>
+                <p>Make sure your Google Maps API key is valid and has the necessary APIs enabled:</p>
+                <ul>
+                    <li>Maps JavaScript API</li>
+                    <li>Places API</li>
+                </ul>
+            </li>
+            <li>
+                <strong>Check Browser Console:</strong>
+                <p>Open your browser's developer tools (F12 or Ctrl+Shift+I) and check the console for specific error messages.</p>
+            </li>
+            <li>
+                <strong>Restart the Server:</strong>
+                <p>Try stopping and restarting the server:</p>
+                <pre>npm start</pre>
+                <p>or</p>
+                <pre>./start.sh</pre>
+            </li>
+        </ol>
+    </div>
+    
+    <div class="card">
+        <h2>Still Having Issues?</h2>
+        <p>If you're still experiencing problems, try the following:</p>
+        <ul>
+            <li>Clear your browser cache and cookies</li>
+            <li>Try a different browser</li>
+            <li>Check if your firewall is blocking any connections</li>
+            <li>Ensure you have the latest version of the code</li>
+        </ul>
+    </div>
+    
+    <script>
+        // Check if we can connect to the test endpoint
+        fetch('/test-ee')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.querySelector('.error-card').innerHTML += `
+                        <div style="background-color: #e6f4ea; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <strong>Good news!</strong> Earth Engine connection is working. 
+                            The issue might be with the browser or Google Maps API.
+                        </div>
+                    `;
+                } else {
+                    document.querySelector('.error-card').innerHTML += `
+                        <div style="background-color: #fce8e6; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                            <strong>Earth Engine Error:</strong> ${data.error}
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                document.querySelector('.error-card').innerHTML += `
+                    <div style="background-color: #fce8e6; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                        <strong>Network Error:</strong> Could not connect to the server. 
+                        Please check if the server is running.
+                    </div>
+                `;
+            });
+    </script>
+</body>
+</html>

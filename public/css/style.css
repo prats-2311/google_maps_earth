@@ -1,0 +1,233 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    color: #333;
+    background-color: #f5f5f5;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.sidebar {
+    width: 350px;
+    background-color: white;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    overflow-y: auto;
+    z-index: 10;
+}
+
+h1 {
+    font-size: 24px;
+    margin-bottom: 5px;
+    color: #1a73e8;
+}
+
+h2 {
+    font-size: 16px;
+    font-weight: 400;
+    margin-bottom: 20px;
+    color: #5f6368;
+}
+
+h3 {
+    font-size: 16px;
+    margin: 15px 0 10px;
+    color: #202124;
+}
+
+.control-panel {
+    margin-top: 20px;
+}
+
+.time-lapse-controls, .prediction-controls, .air-quality-panel, .solutions-panel, .immersive-panel {
+    margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.slider-container {
+    margin: 15px 0;
+}
+
+#year-slider {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.legend {
+    margin-top: 10px;
+}
+
+.legend-gradient {
+    height: 10px;
+    background: linear-gradient(to right, blue, cyan, green, yellow, red);
+    border-radius: 5px;
+    margin-bottom: 5px;
+}
+
+.legend-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #5f6368;
+}
+
+button {
+    background-color: #1a73e8;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 10px;
+    transition: background-color 0.3s;
+    width: 100%;
+}
+
+button:hover {
+    background-color: #1765cc;
+}
+
+button:active {
+    background-color: #1557b0;
+}
+
+#map {
+    flex: 1;
+    height: 100%;
+}
+
+.prediction-item {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+    padding: 8px;
+    background-color: #f1f3f4;
+    border-radius: 4px;
+}
+
+.year {
+    font-weight: 500;
+}
+
+.temp {
+    color: #d93025;
+    font-weight: 500;
+}
+
+.aqi-display {
+    background-color: #f1f3f4;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 10px;
+}
+
+.aqi-value {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.aqi-category {
+    margin-top: 5px;
+    padding: 5px;
+    border-radius: 3px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.hidden {
+    display: none;
+}
+
+#immersive-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#close-immersive-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    color: white;
+    font-size: 30px;
+    width: auto;
+    padding: 5px 10px;
+}
+
+#immersive-content {
+    width: 90%;
+    height: 80%;
+    background-color: #000;
+}
+
+#loading-spinner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #1a73e8;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+}
+
+.loading-text {
+    margin-top: 15px;
+    font-size: 16px;
+    color: #1a73e8;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        height: 40%;
+        overflow-y: auto;
+    }
+    
+    #map {
+        height: 60%;
+    }
+}

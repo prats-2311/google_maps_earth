@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earth Engine Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #1a73e8;
+        }
+        .test-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .test-button:hover {
+            background-color: #1765cc;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background-color: #e6f4ea;
+            color: #137333;
+            border: 1px solid #137333;
+        }
+        .error {
+            background-color: #fce8e6;
+            color: #c5221f;
+            border: 1px solid #c5221f;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Earth Engine Connection Test</h1>
+    <p>This page helps you verify that your Earth Engine connection is working correctly.</p>
+    
+    <div class="test-container">
+        <h2>Test Earth Engine API Connection</h2>
+        <p>Click the button below to test if the server can connect to Earth Engine:</p>
+        <button id="test-ee-btn" class="test-button">Test Earth Engine Connection</button>
+        <div id="ee-result" class="result"></div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Test Time-Lapse Layer</h2>
+        <p>Click the button below to test if the server can generate a time-lapse layer for a specific year:</p>
+        <label for="year-input">Year:</label>
+        <input type="number" id="year-input" min="1980" max="2023" value="2020" style="width: 80px; margin-right: 10px;">
+        <button id="test-timelapse-btn" class="test-button">Test Time-Lapse Layer</button>
+        <div id="timelapse-result" class="result"></div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Current Status</h2>
+        <p>The application is currently running in demonstration mode with simulated data for the temperature visualization.</p>
+        <p>This is because the Earth Engine API integration requires additional setup and permissions that may not be available in all environments.</p>
+        <p>The test endpoints will still work, but they will return simulated data instead of actual Earth Engine data.</p>
+    </div>
+    
+    <div class="test-container">
+        <h2>Next Steps</h2>
+        <p>You can proceed to the main application to see the simulated visualization:</p>
+        <a href="/" class="test-button" style="display: inline-block; text-decoration: none;">Go to Main Application</a>
+    </div>
+    
+    <script>
+        document.getElementById('test-ee-btn').addEventListener('click', function() {
+            const resultElement = document.getElementById('ee-result');
+            resultElement.innerHTML = 'Testing connection...';
+            resultElement.className = 'result';
+            resultElement.style.display = 'block';
+            
+            fetch('/test-ee')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        resultElement.className = 'result success';
+                        resultElement.innerHTML = `<strong>Success!</strong> Earth Engine connection is working.<br>Message: ${data.message}`;
+                    } else {
+                        resultElement.className = 'result error';
+                        resultElement.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                    }
+                })
+                .catch(error => {
+                    resultElement.className = 'result error';
+                    resultElement.innerHTML = `<strong>Network Error:</strong> ${error.message}`;
+                });
+        });
+        
+        document.getElementById('test-timelapse-btn').addEventListener('click', function() {
+            const year = document.getElementById('year-input').value;
+            const resultElement = document.getElementById('timelapse-result');
+            resultElement.innerHTML = `Testing time-lapse layer for year ${year}...`;
+            resultElement.className = 'result';
+            resultElement.style.display = 'block';
+            
+            fetch(`/ee-timelapse-layer?year=${year}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        resultElement.className = 'result success';
+                        resultElement.innerHTML = `
+                            <strong>Success!</strong> Time-lapse layer generated for year ${year}.<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    } else {
+                        resultElement.className = 'result error';
+                        resultElement.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                    }
+                })
+                .catch(error => {
+                    resultElement.className = 'result error';
+                    resultElement.innerHTML = `<strong>Network Error:</strong> ${error.message}`;
+                });
+        });
+    </script>
+</body>
+</html>
