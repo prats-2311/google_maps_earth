@@ -6,6 +6,15 @@ let isLoading = false;
 let isInitialized = false;
 let earthEngineData = {}; // Store Earth Engine responses for analysis
 
+// Utility function for debouncing
+function debounce(func, delay) {
+  let timeoutId;
+  return function (...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func.apply(this, args), delay);
+  };
+}
+
 // Initialize the map when the page loads
 window.onload = function() {
   console.log("Window loaded, setting up event listeners...");
@@ -51,8 +60,14 @@ function initMapInternal() {
       return;
     }
     
-    // Center on Uttar Pradesh, India
-    const uttarPradesh = { lat: 26.8467, lng: 80.9462 }; // Lucknow coordinates
+    // Center on Uttar Pradesh, India with better bounds
+    const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 }; // Lucknow coordinates
+    const uttarPradeshBounds = {
+      north: 29.3,  // Northern boundary
+      south: 23.9,  // Southern boundary
+      east: 84.6,   // Eastern boundary
+      west: 77.1    // Western boundary
+    };
     
     // Check if the map element exists
     const mapElement = document.getElementById('map');
@@ -64,19 +79,28 @@ function initMapInternal() {
     
     console.log("Map element found, creating Google Map instance...");
     
-    // Create the map
+    // Create the map with optimized settings for Uttar Pradesh
     map = new google.maps.Map(mapElement, {
-      center: uttarPradesh,
+      center: uttarPradeshCenter,
       zoom: 7,
       mapTypeId: 'terrain',
       mapTypeControl: true,
       streetViewControl: false,
       fullscreenControl: true,
+      restriction: {
+        latLngBounds: uttarPradeshBounds,
+        strictBounds: false
+      },
       styles: [
         {
           featureType: 'administrative.province',
           elementType: 'geometry.stroke',
           stylers: [{ color: '#4d90fe' }, { weight: 1.5 }]
+        },
+        {
+          featureType: 'administrative.locality',
+          elementType: 'labels.text.fill',
+          stylers: [{ color: '#1a73e8' }]
         }
       ]
     });
@@ -102,14 +126,22 @@ function initMapInternal() {
 
 // Set up event listeners for UI controls
 function setupEventListeners() {
-  // Year slider
+  // Year slider with debouncing
   const yearSlider = document.getElementById('year-slider');
   const selectedYearDisplay = document.getElementById('selected-year');
+  
+  // Create debounced version of loadTimelapseLayer
+  const debouncedLoadTimelapseLayer = debounce(loadTimelapseLayer, 300);
   
   yearSlider.addEventListener('input', function() {
     selectedYear = parseInt(this.value);
     selectedYearDisplay.textContent = selectedYear;
-    loadTimelapseLayer(selectedYear);
+    
+    // Update display immediately for responsiveness
+    selectedYearDisplay.textContent = selectedYear;
+    
+    // Load data with debouncing to prevent too many requests
+    debouncedLoadTimelapseLayer(selectedYear);
   });
   
   // Prediction button
@@ -174,6 +206,9 @@ function loadTimelapseLayer(year) {
   
   isLoading = true;
   showLoadingSpinner();
+  
+  // Performance monitoring
+  const startTime = performance.now();
   console.log(`Loading timelapse layer for year ${year}...`);
   
   // Remove previous overlay if it exists
@@ -310,7 +345,10 @@ function loadTimelapseLayer(year) {
           
           // Wait for tiles to start loading, then hide spinner
           setTimeout(() => {
-            console.log("Delayed spinner hide - ensuring tiles have started loading");
+            const endTime = performance.now();
+            const loadTime = (endTime - startTime).toFixed(2);
+            console.log(`Delayed spinner hide - ensuring tiles have started loading`);
+            console.log(`Total load time for year ${year}: ${loadTime}ms`);
             hideLoadingSpinner();
           }, 1500);
           

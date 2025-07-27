@@ -81,12 +81,21 @@ app.get('/test-ee', (req, res) => {
   }
 });
 
+// Simple in-memory cache for Earth Engine results
+const tileCache = {};
+
 // Endpoint for Earth Engine time-lapse layer
 app.get('/ee-timelapse-layer', (req, res) => {
   try {
     console.log('EE-timelapse-layer endpoint called');
     const year = parseInt(req.query.year) || 2020;
     console.log(`Generating timelapse for year: ${year}`);
+    
+    // Check cache first
+    if (tileCache[year]) {
+      console.log(`Returning cached result for year ${year}`);
+      return res.send(tileCache[year]);
+    }
     
     // Check if Earth Engine is initialized
     if (!ee.data.getAuthToken()) {
@@ -146,12 +155,22 @@ app.get('/ee-timelapse-layer', (req, res) => {
       
       console.log(`Found ${size} images for year ${year}`);
       
+      // Load Uttar Pradesh boundaries for clipping
+      console.log('Loading Uttar Pradesh boundaries...');
+      const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
+        .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
+        .first();
+      
       // Calculate the mean temperature for the year
       console.log('Calculating mean temperature...');
       const meanTemp = dataset.mean();
       
       // Convert from Kelvin to Celsius
       const tempCelsius = meanTemp.subtract(273.15);
+      
+      // Clip the temperature data to Uttar Pradesh boundaries
+      console.log('Clipping data to Uttar Pradesh boundaries...');
+      const clippedTemp = tempCelsius.clip(uttarPradeshROI.geometry());
       
       // Define visualization parameters based on Earth Engine documentation
       // Temperature range for India: typically 15-45°C
@@ -167,8 +186,8 @@ app.get('/ee-timelapse-layer', (req, res) => {
       
       console.log('Generating map ID and token...');
       
-      // Generate the map ID and token
-      tempCelsius.getMap(visParams, (result, error) => {
+      // Generate the map ID and token using the clipped data
+      clippedTemp.getMap(visParams, (result, error) => {
         if (error) {
           console.error('Error generating map:', error);
           console.error('Error details:', JSON.stringify(error, null, 2));
@@ -218,6 +237,10 @@ app.get('/ee-timelapse-layer', (req, res) => {
         if (result.urlFormat) {
           response.urlFormat = result.urlFormat;
         }
+        
+        // Cache the successful result
+        tileCache[year] = response;
+        console.log(`Cached result for year ${year}`);
         
         res.send(response);
       });
