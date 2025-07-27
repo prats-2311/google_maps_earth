@@ -66,13 +66,30 @@ h3 {
     margin-top: 10px;
 }
 
+.data-availability-note {
+    margin-top: 8px;
+    padding: 6px 8px;
+    background-color: #e8f0fe;
+    border-radius: 4px;
+    border-left: 3px solid #1a73e8;
+}
+
+.data-availability-note small {
+    color: #1a73e8;
+    font-size: 11px;
+    font-weight: 500;
+}
+
 .legend {
     margin-top: 10px;
 }
 
 .legend-gradient {
     height: 10px;
-    background: linear-gradient(to right, blue, cyan, green, yellow, red);
+    background: linear-gradient(to right, 
+        #000080, #0000d9, #4000ff, #8000ff, #0080ff, #00ffff, 
+        #00ff80, #80ff00, #daff00, #ffff00, #fff500, #ffda00, 
+        #ffb000, #ffa400, #ff4f00, #ff2500, #ff0a00, #ff00ff);
     border-radius: 5px;
     margin-bottom: 5px;
 }
@@ -107,7 +124,10 @@ button:active {
 
 #map {
     flex: 1;
-    height: 100%;
+    height: 100vh;
+    min-height: 500px;
+    background-color: #e5e3df;
+    position: relative;
 }
 
 .prediction-item {
@@ -149,7 +169,7 @@ button:active {
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 #immersive-overlay {
@@ -188,12 +208,35 @@ button:active {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(255, 255, 255, 0.8);
+    background-color: rgba(255, 255, 255, 0.9);
     z-index: 2000;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
+}
+
+#close-loading-btn {
+    position: absolute !important;
+    top: 20px !important;
+    right: 20px !important;
+    background: transparent !important;
+    border: none !important;
+    color: #1a73e8 !important;
+    font-size: 24px !important;
+    cursor: pointer !important;
+    z-index: 2001 !important;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+#close-loading-btn:hover {
+    background-color: rgba(26, 115, 232, 0.1) !important;
 }
 
 .spinner {
@@ -214,6 +257,32 @@ button:active {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+.data-info-panel {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e8eaed;
+}
+
+.data-info-panel h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: #1a73e8;
+    font-size: 14px;
+}
+
+.info-item {
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.info-item strong {
+    color: #202124;
+    font-weight: 500;
 }
 
 @media (max-width: 768px) {

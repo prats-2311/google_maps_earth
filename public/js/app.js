@@ -1,20 +1,56 @@
 // Global variables
 let map;
 let currentOverlay = null;
-let selectedYear = 2020;
+let selectedYear = 2000; // Middle of available range to show historical progression
 let isLoading = false;
+let isInitialized = false;
+let earthEngineData = {}; // Store Earth Engine responses for analysis
 
 // Initialize the map when the page loads
 window.onload = function() {
-  console.log("Window loaded, initializing map...");
-  initMap();
+  console.log("Window loaded, setting up event listeners...");
+  // Setup event listeners first
   setupEventListeners();
+  
+  // Only show loading spinner if not already initialized
+  if (!isInitialized) {
+    console.log("App not yet initialized, showing loading spinner...");
+    showLoadingSpinner();
+  } else {
+    console.log("App already initialized, skipping loading spinner");
+  }
 };
 
+// This function will be called by Google Maps API when it's loaded (callback)
+window.initMap = function() {
+  console.log("Google Maps API loaded, initializing map...");
+  try {
+    initMapInternal();
+    isInitialized = true; // Mark as initialized
+  } catch (error) {
+    console.error("Error in initMap:", error);
+    hideLoadingSpinner();
+    showError("Failed to initialize Google Maps: " + error.message);
+  }
+};
+
+// Ensure initMap is available globally for the callback
+if (typeof window !== 'undefined') {
+  window.initMap = window.initMap;
+}
+
 // Initialize Google Map
-function initMap() {
+function initMapInternal() {
   try {
     console.log("Initializing Google Map...");
+    
+    // Check if Google Maps API is loaded
+    if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+      console.error("Google Maps API not loaded!");
+      showError("Google Maps API failed to load. Please refresh the page.");
+      return;
+    }
+    
     // Center on Uttar Pradesh, India
     const uttarPradesh = { lat: 26.8467, lng: 80.9462 }; // Lucknow coordinates
     
@@ -22,8 +58,11 @@ function initMap() {
     const mapElement = document.getElementById('map');
     if (!mapElement) {
       console.error("Map element not found!");
+      showError("Map container element not found.");
       return;
     }
+    
+    console.log("Map element found, creating Google Map instance...");
     
     // Create the map
     map = new google.maps.Map(mapElement, {
@@ -110,6 +149,19 @@ function setupEventListeners() {
   closeImmersiveBtn.addEventListener('click', function() {
     document.getElementById('immersive-overlay').classList.add('hidden');
   });
+  
+  // Close loading spinner button
+  const closeLoadingBtn = document.getElementById('close-loading-btn');
+  if (closeLoadingBtn) {
+    closeLoadingBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("Close loading button clicked");
+      hideLoadingSpinner();
+    });
+  } else {
+    console.error("Close loading button not found!");
+  }
 }
 
 // Load the Earth Engine timelapse layer for a specific year
@@ -153,6 +205,18 @@ function loadTimelapseLayer(year) {
       if (data.success) {
         console.log("Received successful response:", data);
         
+        // Store the Earth Engine data for analysis
+        earthEngineData[year] = data;
+        console.log("Earth Engine data structure for year", year, ":", {
+          success: data.success,
+          mapid: data.mapid,
+          token: data.token,
+          year: data.year,
+          simulated: data.simulated,
+          urlFormat: data.urlFormat,
+          fallback_reason: data.fallback_reason
+        });
+        
         // Check if this is a simulated response
         if (data.simulated) {
           console.log("Using simulated temperature layer");
@@ -187,10 +251,14 @@ function loadTimelapseLayer(year) {
           
           const infoWindow = new google.maps.InfoWindow({
             content: `<div style="padding: 10px; text-align: center;">
-                      <h3 style="margin-top: 0;">Simulated Temperature Data</h3>
+                      <h3 style="margin-top: 0;">${data.fallback_reason ? 'Fallback' : 'Simulated'} Temperature Data</h3>
                       <p>Year: ${year}</p>
-                      <p>This is a demonstration using simulated data.</p>
-                      <p>The actual Earth Engine integration requires additional setup.</p>
+                      ${data.fallback_reason ? 
+                        `<p>Earth Engine error: ${data.fallback_reason}</p>
+                         <p>Using simulated data as fallback.</p>` :
+                        `<p>This is a demonstration using simulated data.</p>
+                         <p>The actual Earth Engine integration requires additional setup.</p>`
+                      }
                     </div>`,
             position: center
           });
@@ -205,13 +273,28 @@ function loadTimelapseLayer(year) {
           console.log("Simulated layer added successfully");
           hideLoadingSpinner();
         } else {
-          // Create the tile layer using the mapid and token
+          // Create the tile layer using the mapid and token (or urlFormat for newer API)
           console.log("Creating tile layer with mapid:", data.mapid);
+          
+          let getTileUrlFunction;
+          
+          if (data.urlFormat) {
+            // Use the new urlFormat from Earth Engine API
+            console.log("Using new Earth Engine API urlFormat:", data.urlFormat);
+            getTileUrlFunction = function(tile, zoom) {
+              return data.urlFormat.replace('{z}', zoom).replace('{x}', tile.x).replace('{y}', tile.y);
+            };
+          } else {
+            // Use the legacy format with mapid and token
+            console.log("Using legacy Earth Engine API format");
+            getTileUrlFunction = function(tile, zoom) {
+              return `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}?token=${data.token}`;
+            };
+          }
+          
           const tileSource = new google.maps.ImageMapType({
             name: `Temperature ${year}`,
-            getTileUrl: function(tile, zoom) {
-              return `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}?token=${data.token}`;
-            },
+            getTileUrl: getTileUrlFunction,
             tileSize: new google.maps.Size(256, 256),
             minZoom: 1,
             maxZoom: 20
@@ -224,7 +307,19 @@ function loadTimelapseLayer(year) {
           currentOverlay = tileSource;
           
           console.log("Layer added successfully");
-          hideLoadingSpinner();
+          
+          // Wait for tiles to start loading, then hide spinner
+          setTimeout(() => {
+            console.log("Delayed spinner hide - ensuring tiles have started loading");
+            hideLoadingSpinner();
+          }, 1500);
+          
+          // Also hide spinner immediately if user clicks close button
+          const closeBtn = document.getElementById('close-loading-btn');
+          if (closeBtn) {
+            closeBtn.style.display = 'block';
+            closeBtn.style.pointerEvents = 'auto';
+          }
         }
       } else {
         console.error('Error loading Earth Engine layer:', data.error);
@@ -252,8 +347,53 @@ function loadTimelapseLayer(year) {
     });
 }
 
+// Analyze Earth Engine data structure and format
+function analyzeEarthEngineData() {
+  console.log("=== EARTH ENGINE DATA ANALYSIS ===");
+  console.log("Collected Earth Engine responses:", earthEngineData);
+  
+  // Analyze the data structure
+  const dataKeys = Object.keys(earthEngineData);
+  if (dataKeys.length > 0) {
+    const sampleData = earthEngineData[dataKeys[0]];
+    console.log("Sample Earth Engine response structure:");
+    console.log("- success:", typeof sampleData.success, "->", sampleData.success);
+    console.log("- mapid:", typeof sampleData.mapid, "->", sampleData.mapid);
+    console.log("- token:", typeof sampleData.token, "->", sampleData.token);
+    console.log("- year:", typeof sampleData.year, "->", sampleData.year);
+    console.log("- simulated:", typeof sampleData.simulated, "->", sampleData.simulated);
+    console.log("- urlFormat:", typeof sampleData.urlFormat, "->", sampleData.urlFormat);
+    
+    // Analyze URL format for tile access
+    if (sampleData.urlFormat) {
+      console.log("URL Format Analysis:");
+      console.log("- Base URL:", sampleData.urlFormat.split('/tiles/')[0]);
+      console.log("- Tile pattern:", sampleData.urlFormat.split('/tiles/')[1]);
+      console.log("- Uses new Earth Engine API format");
+    } else {
+      console.log("- Uses legacy Earth Engine API format with mapid + token");
+    }
+  }
+  
+  console.log("=== DATA INTEGRATION WITH TENSORFLOW ===");
+  console.log("Historical data format (from data.js):");
+  console.log("- Structure: { year: number, avgTemp: number }");
+  console.log("- Sample:", historicalTemperatureData.slice(0, 3));
+  console.log("- Total records:", historicalTemperatureData.length);
+  
+  console.log("Integration approach:");
+  console.log("1. Earth Engine provides spatial temperature data (raster tiles)");
+  console.log("2. Historical data provides temporal temperature trends (time series)");
+  console.log("3. TensorFlow.js uses historical data for training");
+  console.log("4. Google Maps displays Earth Engine raster data");
+  console.log("5. Future enhancement: Extract pixel values from Earth Engine for training");
+}
+
 // Train TensorFlow.js model and predict future temperatures
 function trainAndPredict() {
+  // First analyze the data structure
+  analyzeEarthEngineData();
+  
   // Extract features (years) and labels (temperatures) from historical data
   const years = historicalTemperatureData.map(d => d.year);
   const temps = historicalTemperatureData.map(d => d.avgTemp);
@@ -491,6 +631,9 @@ function showLoadingSpinner() {
   const spinner = document.getElementById('loading-spinner');
   if (spinner) {
     spinner.classList.remove('hidden');
+    // Ensure the spinner is visible by removing any inline display style
+    spinner.style.display = '';
+    console.log("Loading spinner shown successfully");
   } else {
     console.error("Loading spinner element not found!");
   }
@@ -499,13 +642,70 @@ function showLoadingSpinner() {
 // Hide loading spinner
 function hideLoadingSpinner() {
   console.log("Hiding loading spinner");
+  debugSpinnerState(); // Debug before hiding
+  
   const spinner = document.getElementById('loading-spinner');
   if (spinner) {
+    // Multiple approaches to ensure the spinner is hidden
     spinner.classList.add('hidden');
+    spinner.style.display = 'none';
+    spinner.style.visibility = 'hidden';
+    spinner.style.opacity = '0';
+    
+    // Force DOM reflow
+    spinner.offsetHeight;
+    
+    console.log("Loading spinner hidden successfully");
+    
+    // Debug after hiding
+    setTimeout(() => {
+      debugSpinnerState();
+    }, 100);
   } else {
     console.error("Loading spinner element not found!");
   }
   
   // Also reset the loading state
   isLoading = false;
+}
+
+// Debug function to check spinner state
+function debugSpinnerState() {
+  const spinner = document.getElementById('loading-spinner');
+  if (spinner) {
+    console.log("=== SPINNER DEBUG INFO ===");
+    console.log("- Element exists:", !!spinner);
+    console.log("- Classes:", spinner.className);
+    console.log("- Style display:", spinner.style.display);
+    console.log("- Computed display:", window.getComputedStyle(spinner).display);
+    console.log("- Computed visibility:", window.getComputedStyle(spinner).visibility);
+    console.log("- Has 'hidden' class:", spinner.classList.contains('hidden'));
+    console.log("- isLoading state:", isLoading);
+    console.log("========================");
+  } else {
+    console.error("Spinner element not found for debugging!");
+  }
+}
+
+// Show error message
+function showError(message) {
+  console.error("Showing error:", message);
+  const errorMessage = document.getElementById('error-message');
+  const errorText = document.getElementById('error-text');
+  
+  if (errorMessage && errorText) {
+    errorText.textContent = message;
+    errorMessage.classList.remove('hidden');
+  } else {
+    console.error("Error message elements not found!");
+    alert('Error: ' + message);
+  }
+}
+
+// Make debug and utility functions available globally for troubleshooting
+if (typeof window !== 'undefined') {
+  window.debugSpinnerState = debugSpinnerState;
+  window.hideLoadingSpinner = hideLoadingSpinner;
+  window.showLoadingSpinner = showLoadingSpinner;
+  window.analyzeEarthEngineData = analyzeEarthEngineData;
 }

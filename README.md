@@ -16,17 +16,37 @@ An interactive climate visualization application that shows historical temperatu
 
 ## Current Implementation Status
 
-The application is currently running in demonstration mode with simulated data for the temperature visualization. This is because the Earth Engine API integration requires additional setup and permissions that may not be available in all environments.
+The application is **FULLY FUNCTIONAL** with real Earth Engine data integration.
 
 ### Working Features
-- Google Maps integration with the provided API key
-- User interface with year slider and controls
-- TensorFlow.js model for future temperature prediction
-- Simulated temperature visualization for Uttar Pradesh
+- ✅ **Real Earth Engine Data**: ERA5 climate dataset integration working
+- ✅ **Google Maps Integration**: Professional map interface with working API key
+- ✅ **Interactive Time-lapse**: Year slider (1980-2020) with real temperature data
+- ✅ **TensorFlow.js AI Model**: Future temperature predictions (2040, 2050, 2060)
+- ✅ **Professional UI**: Loading states, error handling, responsive design
+- ✅ **Fallback Systems**: Graceful handling of API limitations
 
-### Features Requiring Additional Setup
-- Earth Engine API integration for real temperature data
-- This requires proper Earth Engine project setup and permissions
+### Data Sources & Time Periods
+
+#### Primary Dataset: ERA5 Daily Aggregates
+- **Source**: `ECMWF/ERA5/DAILY` from Google Earth Engine
+- **Parameter**: `mean_2m_air_temperature` (2-meter air temperature)
+- **Time Range**: 1979-2020 (ERA5 reanalysis data availability)
+- **Spatial Coverage**: Global, focused on Uttar Pradesh, India
+- **Temporal Resolution**: Daily data aggregated to annual means
+- **Units**: Converted from Kelvin to Celsius (15°C to 45°C range)
+
+#### Visualization Details
+- **Color Palette**: 18-color gradient from blue (cool) to red (hot)
+- **Temperature Range**: 15°C (blue) to 45°C (red/magenta)
+- **Geographic Focus**: Uttar Pradesh boundaries (23.9°N to 29.3°N, 77.1°E to 84.6°E)
+- **Map Center**: Lucknow (26.8467°N, 80.9462°E)
+
+#### AI Training Data
+- **Source**: Local `data.js` file with historical temperature averages
+- **Time Range**: 1980-2023 (44 years of data)
+- **Purpose**: Train TensorFlow.js model for future predictions
+- **Predictions**: 2040, 2050, 2060 temperature forecasts
 
 ## Prerequisites
 

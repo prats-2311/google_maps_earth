@@ -8,6 +8,11 @@ const port = process.env.PORT || 3000;
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Route for favicon to prevent 404 errors
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).send(); // No content response
+});
+
 // Route for the test page
 app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
@@ -92,72 +97,155 @@ app.get('/ee-timelapse-layer', (req, res) => {
       });
     }
     
-    // For testing/development, return a simulated response
-    // This will bypass the Earth Engine API call that's causing the 500 error
-    console.log('Returning simulated Earth Engine response for development');
-    return res.send({
-      success: true,
-      mapid: 'simulated-map-id',
-      token: 'simulated-token',
-      year: year,
-      simulated: true
-    });
+    // Load the ERA5 dataset for the specified year
+    console.log(`Loading ERA5 dataset for year ${year}...`);
     
-    /* 
-    // The following code is commented out to avoid the 500 error
-    // When you have resolved the Earth Engine API issues, you can uncomment this code
+    // Check if the year is within the expected available range
+    if (year < 1979 || year > 2020) {
+      console.log(`Year ${year} is outside the typical ERA5 data range (1979-2020), falling back to simulated data`);
+      return res.send({
+        success: true,
+        mapid: 'simulated-map-id',
+        token: 'simulated-token',
+        year: year,
+        simulated: true,
+        fallback_reason: `ERA5 data not available for ${year}. Available range: 1979-2020`
+      });
+    }
     
-    // Load the ERA5 dataset
     const dataset = ee.ImageCollection('ECMWF/ERA5/DAILY')
-      .filter(ee.Filter.date(`${year}-01-01`, `${year}-12-31`));
+      .filter(ee.Filter.date(`${year}-01-01`, `${year}-12-31`))
+      .select('mean_2m_air_temperature');
     
-    // Calculate the mean temperature for the year
-    const meanTemp = dataset.select('mean_2m_air_temperature').mean();
-    
-    // Convert from Kelvin to Celsius
-    const tempCelsius = meanTemp.subtract(273.15);
-    
-    // Define visualization parameters
-    const visParams = {
-      min: 20,
-      max: 35,
-      palette: ['blue', 'cyan', 'green', 'yellow', 'red']
-    };
-    
-    console.log('Generating map ID and token...');
-    
-    // Generate the map ID and token
-    tempCelsius.getMap(visParams, (result, error) => {
-      if (error) {
-        console.error('Error generating map:', error);
-        return res.status(500).send({ success: false, error: error.message });
-      }
-      
-      if (!result || !result.mapid || !result.token) {
-        console.error('Invalid map result:', result);
-        return res.status(500).send({ 
-          success: false, 
-          error: 'Invalid map data received from Earth Engine' 
+    // Check if the dataset contains any images
+    console.log('Checking dataset size...');
+    dataset.size().getInfo((size, sizeError) => {
+      if (sizeError) {
+        console.error('Error checking dataset size:', sizeError);
+        return res.send({
+          success: true,
+          mapid: 'simulated-map-id',
+          token: 'simulated-token',
+          year: year,
+          simulated: true,
+          fallback_reason: `Error accessing ERA5 data for ${year}: ${sizeError.message}`
         });
       }
       
-      console.log(`Successfully generated map ID: ${result.mapid}`);
-      res.send({ 
-        success: true, 
-        mapid: result.mapid, 
-        token: result.token,
-        year: year
+      if (size === 0) {
+        console.log(`No ERA5 data found for year ${year}`);
+        return res.send({
+          success: true,
+          mapid: 'simulated-map-id',
+          token: 'simulated-token',
+          year: year,
+          simulated: true,
+          fallback_reason: `No ERA5 data available for ${year}`
+        });
+      }
+      
+      console.log(`Found ${size} images for year ${year}`);
+      
+      // Calculate the mean temperature for the year
+      console.log('Calculating mean temperature...');
+      const meanTemp = dataset.mean();
+      
+      // Convert from Kelvin to Celsius
+      const tempCelsius = meanTemp.subtract(273.15);
+      
+      // Define visualization parameters based on Earth Engine documentation
+      // Temperature range for India: typically 15-45°C
+      const visParams = {
+        min: 15,
+        max: 45,
+        palette: [
+          '000080', '0000d9', '4000ff', '8000ff', '0080ff', '00ffff', 
+          '00ff80', '80ff00', 'daff00', 'ffff00', 'fff500', 'ffda00', 
+          'ffb000', 'ffa400', 'ff4f00', 'ff2500', 'ff0a00', 'ff00ff'
+        ]
+      };
+      
+      console.log('Generating map ID and token...');
+      
+      // Generate the map ID and token
+      tempCelsius.getMap(visParams, (result, error) => {
+        if (error) {
+          console.error('Error generating map:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          
+          // Fallback to simulated data if Earth Engine fails
+          console.log('Falling back to simulated data due to Earth Engine error');
+          return res.send({
+            success: true,
+            mapid: 'simulated-map-id',
+            token: 'simulated-token',
+            year: year,
+            simulated: true,
+            fallback_reason: error.message
+          });
+        }
+        
+        console.log('Earth Engine result received:', JSON.stringify(result, null, 2));
+        
+        if (!result || !result.mapid) {
+          console.error('Invalid map result - missing mapid');
+          console.error('Result object:', JSON.stringify(result, null, 2));
+          
+          // Fallback to simulated data if result is invalid
+          console.log('Falling back to simulated data due to invalid result');
+          return res.send({
+            success: true,
+            mapid: 'simulated-map-id',
+            token: 'simulated-token',
+            year: year,
+            simulated: true,
+            fallback_reason: 'Invalid map data received from Earth Engine'
+          });
+        }
+        
+        console.log(`Successfully generated map ID: ${result.mapid}`);
+        
+        // Handle both old and new Earth Engine API response formats
+        const response = { 
+          success: true, 
+          mapid: result.mapid, 
+          token: result.token || '', // Token might be empty in newer API
+          year: year,
+          simulated: false
+        };
+        
+        // Include urlFormat if available (newer API)
+        if (result.urlFormat) {
+          response.urlFormat = result.urlFormat;
+        }
+        
+        res.send(response);
       });
     });
-    */
   } catch (error) {
     console.error('Exception in ee-timelapse-layer endpoint:', error);
     res.status(500).send({ success: false, error: error.message });
   }
 });
 
+// Debug route
+app.get('/debug', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'debug.html'));
+});
+
+// Spinner test route
+app.get('/spinner-test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'spinner-test.html'));
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
+  console.log(`Available endpoints:`);
+  console.log(`  - Main app: http://localhost:${port}/`);
+  console.log(`  - Test page: http://localhost:${port}/test`);
+  console.log(`  - Debug page: http://localhost:${port}/debug`);
+  console.log(`  - Spinner test: http://localhost:${port}/spinner-test`);
+  console.log(`  - Earth Engine test: http://localhost:${port}/test-ee`);
   initializeEarthEngine();
 });

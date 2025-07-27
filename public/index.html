@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Climate Visualization - Uttar Pradesh</title>
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
     <!-- Fallback mechanism if the page doesn't load within 30 seconds -->
@@ -30,14 +31,17 @@
                 <div class="time-lapse-controls">
                     <h3>Historical Temperature</h3>
                     <div class="slider-container">
-                        <label for="year-slider">Year: <span id="selected-year">2020</span></label>
-                        <input type="range" id="year-slider" min="1980" max="2023" value="2020">
+                        <label for="year-slider">Year: <span id="selected-year">2000</span></label>
+                        <input type="range" id="year-slider" min="1979" max="2020" value="2000">
+                        <div class="data-availability-note">
+                            <small>Real ERA5 climate data available: 1979-2020 (41 years)</small>
+                        </div>
                     </div>
                     <div class="legend">
                         <div class="legend-gradient"></div>
                         <div class="legend-labels">
-                            <span>20°C</span>
-                            <span>35°C</span>
+                            <span>15°C</span>
+                            <span>45°C</span>
                         </div>
                     </div>
                 </div>
@@ -81,6 +85,25 @@
                 <div class="immersive-panel hidden" id="immersive-panel">
                     <button id="immersive-view-btn">View Immersive Impact</button>
                 </div>
+                
+                <div class="data-info-panel">
+                    <h3>Data Information</h3>
+                    <div class="info-item">
+                        <strong>Dataset:</strong> ERA5 Daily Aggregates
+                    </div>
+                    <div class="info-item">
+                        <strong>Source:</strong> ECMWF via Google Earth Engine
+                    </div>
+                    <div class="info-item">
+                        <strong>Coverage:</strong> 1979-2020 (41 years)
+                    </div>
+                    <div class="info-item">
+                        <strong>Parameter:</strong> Mean 2m Air Temperature
+                    </div>
+                    <div class="info-item">
+                        <strong>Region:</strong> Uttar Pradesh, India
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -92,6 +115,7 @@
         </div>
         
         <div id="loading-spinner">
+            <button id="close-loading-btn" onclick="window.hideLoadingSpinner && window.hideLoadingSpinner()" style="position: absolute; top: 20px; right: 20px; background: transparent; border: none; color: #1a73e8; font-size: 24px; cursor: pointer; z-index: 2001;" title="Close loading screen">&times;</button>
             <div class="spinner"></div>
             <div class="loading-text">Loading...</div>
         </div>
@@ -116,9 +140,38 @@
        - Distance Matrix API
     4. Create an API key and replace the placeholder below
     -->
-    <!-- Using the provided Google Maps API key -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBR5_tFhPYuUTaaNgvPBbSzy8VnPSZTJNo&libraries=places" onerror="document.getElementById('error-message').classList.remove('hidden'); document.getElementById('error-text').textContent = 'Failed to load Google Maps API. Please check your API key and internet connection.';"></script>
+    <!-- Load data and app scripts first -->
     <script src="js/data.js"></script>
     <script src="js/app.js"></script>
+    <!-- Load Google Maps API with proper async loading -->
+    <script>
+      // Global callback function for Google Maps
+      window.initGoogleMaps = function() {
+        console.log('Google Maps API loaded via callback');
+        if (typeof initMap === 'function') {
+          initMap();
+        } else {
+          console.error('initMap function not found');
+        }
+      };
+      
+      // Load Google Maps API script
+      (function() {
+        const script = document.createElement('script');
+        script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyBR5_tFhPYuUTaaNgvPBbSzy8VnPSZTJNo&libraries=places&loading=async&callback=initGoogleMaps';
+        script.async = true;
+        script.defer = true;
+        script.onerror = function() {
+          console.error('Failed to load Google Maps API');
+          const errorMessage = document.getElementById('error-message');
+          const errorText = document.getElementById('error-text');
+          if (errorMessage && errorText) {
+            errorText.textContent = 'Failed to load Google Maps API. Please check your internet connection.';
+            errorMessage.classList.remove('hidden');
+          }
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
 </body>
 </html>
