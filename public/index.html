@@ -30,19 +30,49 @@
             <div class="control-panel">
                 <div class="time-lapse-controls">
                     <h3>Historical Temperature</h3>
+                    
+                    <!-- Progress Loading Section -->
+                    <div id="bulk-loading-section">
+                        <button id="load-all-data-btn">Load All Historical Data (1979-2020)</button>
+                        <div id="loading-progress" class="hidden">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="progress-percentage">0%</span>
+                                <span id="progress-status">Preparing...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Year Range Selection -->
+                    <div class="year-range-controls">
+                        <label for="start-year">Start Year:</label>
+                        <input type="number" id="start-year" min="1979" max="2020" value="1990">
+                        
+                        <label for="end-year">End Year:</label>
+                        <input type="number" id="end-year" min="1979" max="2020" value="2000">
+                    </div>
+                    
+                    <!-- Time-lapse Controls -->
+                    <div id="timelapse-controls" class="hidden">
+                        <button id="play-timelapse-btn">▶ Play Time-lapse</button>
+                        <button id="pause-timelapse-btn" class="hidden">⏸ Pause</button>
+                        <button id="stop-timelapse-btn">⏹ Stop</button>
+                        
+                        <div class="timelapse-settings">
+                            <label for="timelapse-speed">Speed:</label>
+                            <select id="timelapse-speed">
+                                <option value="500">Fast (0.5s/year)</option>
+                                <option value="1000" selected>Normal (1s/year)</option>
+                                <option value="2000">Slow (2s/year)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
                     <div class="slider-container">
                         <label for="year-slider">Year: <span id="selected-year">2000</span></label>
                         <input type="range" id="year-slider" min="1979" max="2020" value="2000">
-                        <div class="data-availability-note">
-                            <small>Real ERA5 climate data available: 1979-2020 (41 years)</small>
-                        </div>
-                    </div>
-                    <div class="legend">
-                        <div class="legend-gradient"></div>
-                        <div class="legend-labels">
-                            <span>15°C</span>
-                            <span>45°C</span>
-                        </div>
                     </div>
                 </div>
                 

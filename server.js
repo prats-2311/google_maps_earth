@@ -84,16 +84,34 @@ app.get('/test-ee', (req, res) => {
 // Simple in-memory cache for Earth Engine results
 const tileCache = {};
 
+// Add a function to clear cache for debugging
+function clearCache() {
+  Object.keys(tileCache).forEach(key => delete tileCache[key]);
+  console.log('Cache cleared');
+}
+
+// Debug endpoint to clear cache
+app.get('/clear-cache', (req, res) => {
+  clearCache();
+  res.json({ success: true, message: 'Cache cleared successfully' });
+});
+
 // Endpoint for Earth Engine time-lapse layer
 app.get('/ee-timelapse-layer', (req, res) => {
   try {
     console.log('EE-timelapse-layer endpoint called');
     const year = parseInt(req.query.year) || 2020;
-    console.log(`Generating timelapse for year: ${year}`);
+    const bypassCache = req.query.nocache === 'true';
+    console.log(`Generating timelapse for year: ${year}, bypass cache: ${bypassCache}`);
     
-    // Check cache first
-    if (tileCache[year]) {
+    // Check cache first (unless bypassed)
+    if (!bypassCache && tileCache[year]) {
       console.log(`Returning cached result for year ${year}`);
+      console.log(`Cached data for year ${year}:`, {
+        mapid: tileCache[year].mapid,
+        year: tileCache[year].year,
+        simulated: tileCache[year].simulated
+      });
       return res.send(tileCache[year]);
     }
     
@@ -108,6 +126,7 @@ app.get('/ee-timelapse-layer', (req, res) => {
     
     // Load the ERA5 dataset for the specified year
     console.log(`Loading ERA5 dataset for year ${year}...`);
+    console.log(`Date filter: ${year}-01-01 to ${year}-12-31`);
     
     // Check if the year is within the expected available range
     if (year < 1979 || year > 2020) {
@@ -122,9 +141,23 @@ app.get('/ee-timelapse-layer', (req, res) => {
       });
     }
     
-    const dataset = ee.ImageCollection('ECMWF/ERA5/DAILY')
-      .filter(ee.Filter.date(`${year}-01-01`, `${year}-12-31`))
-      .select('mean_2m_air_temperature');
+    console.log(`Creating filtered dataset for year ${year}...`);
+    
+    // Create date range for the specific year
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+    
+    // Load the collection and apply filters step by step to ensure proper filtering
+    const collection = ee.ImageCollection('ECMWF/ERA5/DAILY');
+    console.log('Base collection loaded');
+    
+    const dateFiltered = collection.filter(ee.Filter.date(startDate, endDate));
+    console.log(`Date filter applied: ${startDate} to ${endDate}`);
+    
+    const dataset = dateFiltered.select('mean_2m_air_temperature');
+    console.log('Temperature band selected');
+    
+    console.log(`Dataset created with date filter: ${startDate} to ${endDate}`);
     
     // Check if the dataset contains any images
     console.log('Checking dataset size...');
@@ -155,22 +188,33 @@ app.get('/ee-timelapse-layer', (req, res) => {
       
       console.log(`Found ${size} images for year ${year}`);
       
+      // Verify the date range of the filtered dataset
+      console.log('Verifying date range of filtered dataset...');
+      const firstImage = dataset.first();
+      const lastImage = dataset.sort('system:time_start', false).first();
+      
       // Load Uttar Pradesh boundaries for clipping
       console.log('Loading Uttar Pradesh boundaries...');
       const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
         .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
         .first();
       
-      // Calculate the mean temperature for the year
-      console.log('Calculating mean temperature...');
+      // Calculate the mean temperature for the year (CRITICAL: this must be done on the filtered dataset)
+      console.log(`Calculating mean temperature for year ${year} from ${size} images...`);
       const meanTemp = dataset.mean();
+      console.log(`Mean temperature calculated for year ${year}`);
       
       // Convert from Kelvin to Celsius
       const tempCelsius = meanTemp.subtract(273.15);
       
+      // Add a unique identifier to ensure each year's computation is distinct
+      const uniqueId = `temp_${year}_${Date.now()}`;
+      const tempWithId = tempCelsius.set('computation_id', uniqueId);
+      console.log(`Added unique computation ID: ${uniqueId}`);
+      
       // Clip the temperature data to Uttar Pradesh boundaries
       console.log('Clipping data to Uttar Pradesh boundaries...');
-      const clippedTemp = tempCelsius.clip(uttarPradeshROI.geometry());
+      const clippedTemp = tempWithId.clip(uttarPradeshROI.geometry());
       
       // Define visualization parameters based on Earth Engine documentation
       // Temperature range for India: typically 15-45°C
@@ -240,7 +284,11 @@ app.get('/ee-timelapse-layer', (req, res) => {
         
         // Cache the successful result
         tileCache[year] = response;
-        console.log(`Cached result for year ${year}`);
+        console.log(`Cached result for year ${year}:`, {
+          mapid: response.mapid,
+          year: response.year,
+          simulated: response.simulated
+        });
         
         res.send(response);
       });
@@ -248,6 +296,338 @@ app.get('/ee-timelapse-layer', (req, res) => {
   } catch (error) {
     console.error('Exception in ee-timelapse-layer endpoint:', error);
     res.status(500).send({ success: false, error: error.message });
+  }
+});
+
+// Dedicated temperature layer endpoint for time-lapse feature
+app.get('/ee-temp-layer', (req, res) => {
+  try {
+    console.log('EE-temp-layer endpoint called');
+    const year = parseInt(req.query.year) || 2000;
+    const bypassCache = req.query.nocache === 'true';
+    console.log(`Generating temperature layer for year: ${year}, bypass cache: ${bypassCache}`);
+    
+    // Check cache first for better performance (unless bypassed)
+    const cacheKey = `temp_${year}`;
+    if (!bypassCache && tileCache[cacheKey]) {
+      console.log(`Returning cached temperature result for year ${year}`);
+      console.log(`Cached temperature data for year ${year}:`, {
+        mapid: tileCache[cacheKey].mapid,
+        year: tileCache[cacheKey].year,
+        dataType: tileCache[cacheKey].dataType
+      });
+      return res.send(tileCache[cacheKey]);
+    }
+    
+    // Check if Earth Engine is initialized
+    if (!ee.data.getAuthToken()) {
+      console.error('Earth Engine not authenticated');
+      return res.status(500).send({ 
+        success: false, 
+        error: 'Earth Engine not authenticated. Please restart the server.' 
+      });
+    }
+    
+    // Validate year range for ERA5 data
+    if (year < 1979 || year > 2020) {
+      console.log(`Year ${year} is outside ERA5 data range (1979-2020)`);
+      return res.status(400).send({
+        success: false,
+        error: `Year ${year} is outside available data range. ERA5 data available: 1979-2020`
+      });
+    }
+    
+    console.log(`Loading Uttar Pradesh boundaries...`);
+    // Step 2: Load Uttar Pradesh administrative boundary
+    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
+      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
+      .first();
+    
+    console.log(`Loading ERA5 temperature data for year ${year}...`);
+    console.log(`Temperature date filter: ${year}-01-01 to ${year}-12-31`);
+    
+    // Step 3: Load ERA5 Daily Aggregates for the requested year
+    console.log(`Creating filtered temperature collection for year ${year}...`);
+    
+    // Create date range for the specific year
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+    
+    // Load the collection and apply filters step by step to ensure proper filtering
+    const baseCollection = ee.ImageCollection('ECMWF/ERA5/DAILY');
+    console.log('Base temperature collection loaded');
+    
+    const dateFilteredCollection = baseCollection.filter(ee.Filter.date(startDate, endDate));
+    console.log(`Temperature date filter applied: ${startDate} to ${endDate}`);
+    
+    const temperatureCollection = dateFilteredCollection.select('mean_2m_air_temperature');
+    console.log('Temperature band selected from filtered collection');
+    
+    console.log(`Temperature collection created with date filter: ${startDate} to ${endDate}`);
+    
+    // Check if data exists for this year
+    temperatureCollection.size().getInfo((size, sizeError) => {
+      if (sizeError) {
+        console.error('Error checking dataset size:', sizeError);
+        return res.status(500).send({
+          success: false,
+          error: `Error accessing ERA5 data: ${sizeError.message}`
+        });
+      }
+      
+      if (size === 0) {
+        console.log(`No ERA5 data found for year ${year}`);
+        return res.status(404).send({
+          success: false,
+          error: `No temperature data available for year ${year}`
+        });
+      }
+      
+      console.log(`Found ${size} temperature images for year ${year}`);
+      
+      // Verify the date range of the filtered temperature collection
+      console.log('Verifying date range of filtered temperature collection...');
+      const firstTempImage = temperatureCollection.first();
+      const lastTempImage = temperatureCollection.sort('system:time_start', false).first();
+      
+      // Calculate min and max temperatures instead of mean
+      console.log(`Calculating min and max temperatures for year ${year} from ${size} images...`);
+
+      // Get the collection for the year
+      const yearlyCollection = temperatureCollection;
+
+      // Calculate min temperature for the year
+      const minTemp = yearlyCollection.min().subtract(273.15);
+      const maxTemp = yearlyCollection.max().subtract(273.15);
+
+      // Create a composite showing temperature range
+      const tempRange = maxTemp.subtract(minTemp);
+
+      // Use max temperature for the main visualization (shows hotspots)
+      const tempForVisualization = maxTemp;
+
+      // Add unique identifier
+      const uniqueTempId = `temp_minmax_${year}_${Date.now()}`;
+      const tempWithId = tempForVisualization.set('computation_id', uniqueTempId);
+
+      // Clip to Uttar Pradesh boundaries
+      console.log('Clipping temperature data to Uttar Pradesh boundaries...');
+      const clippedTemp = tempWithId.clip(uttarPradeshROI.geometry());
+
+      // Enhanced visualization parameters for min/max temperature display
+      const tempVisParams = {
+        min: 5,     // Lower bound for cold spots
+        max: 50,    // Higher bound for hot spots  
+        palette: [
+          '000080', '0000d9', '4000ff', '8000ff', '0080ff', '00ffff', 
+          '00ff80', '80ff00', 'daff00', 'ffff00', 'fff500', 'ffda00', 
+          'ffb000', 'ffa400', 'ff4f00', 'ff2500', 'ff0a00', 'ff00ff'
+        ]
+      };
+
+      // Get statistics for the clipped data to show actual min/max locations
+      clippedTemp.reduceRegion({
+        reducer: ee.Reducer.minMax(),
+        geometry: uttarPradeshROI.geometry(),
+        scale: 1000,
+        maxPixels: 1e9
+      }).getInfo((stats, statsError) => {
+        if (!statsError && stats) {
+          console.log(`Temperature extremes for year ${year}:`, {
+            min: stats.mean_2m_air_temperature_min,
+            max: stats.mean_2m_air_temperature_max
+          });
+        }
+      });
+
+      console.log('Generating map tiles...');
+      // Step 7: Generate map ID and token
+      clippedTemp.getMap(tempVisParams, (result, error) => {
+        if (error) {
+          console.error('Error generating temperature map:', error);
+          return res.status(500).send({
+            success: false,
+            error: `Failed to generate temperature map: ${error.message}`
+          });
+        }
+        
+        if (!result || !result.mapid) {
+          console.error('Invalid map result - missing mapid');
+          return res.status(500).send({
+            success: false,
+            error: 'Invalid map data received from Earth Engine'
+          });
+        }
+        
+        console.log(`Successfully generated temperature map ID: ${result.mapid}`);
+        
+        // Step 8: Prepare response with mapId and token
+        const response = { 
+          success: true, 
+          mapid: result.mapid, 
+          token: result.token || '',
+          year: year,
+          dataType: 'temperature',
+          units: 'Celsius',
+          source: 'ERA5 Daily Aggregates',
+          region: 'Uttar Pradesh'
+        };
+        
+        // Include urlFormat if available (newer API)
+        if (result.urlFormat) {
+          response.urlFormat = result.urlFormat;
+        }
+        
+        // Cache the successful result
+        tileCache[cacheKey] = response;
+        console.log(`Cached temperature result for year ${year}:`, {
+          mapid: response.mapid,
+          year: response.year,
+          dataType: response.dataType
+        });
+        
+        res.send(response);
+      });
+    });
+  } catch (error) {
+    console.error('Exception in ee-temp-layer endpoint:', error);
+    res.status(500).send({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Rainfall layer endpoint for expanding weather data visualization
+app.get('/ee-rainfall-layer', (req, res) => {
+  try {
+    console.log('EE-rainfall-layer endpoint called');
+    const year = parseInt(req.query.year) || 2000;
+    console.log(`Generating rainfall layer for year: ${year}`);
+    
+    // Check cache first for better performance
+    const cacheKey = `rainfall_${year}`;
+    if (tileCache[cacheKey]) {
+      console.log(`Returning cached rainfall result for year ${year}`);
+      return res.send(tileCache[cacheKey]);
+    }
+    
+    // Check if Earth Engine is initialized
+    if (!ee.data.getAuthToken()) {
+      console.error('Earth Engine not authenticated');
+      return res.status(500).send({ 
+        success: false, 
+        error: 'Earth Engine not authenticated. Please restart the server.' 
+      });
+    }
+    
+    // Validate year range for CHIRPS data (available from 1981)
+    if (year < 1981 || year > 2023) {
+      console.log(`Year ${year} is outside CHIRPS data range (1981-2023)`);
+      return res.status(400).send({
+        success: false,
+        error: `Year ${year} is outside available data range. CHIRPS data available: 1981-2023`
+      });
+    }
+    
+    console.log(`Loading Uttar Pradesh boundaries...`);
+    // Load Uttar Pradesh administrative boundary
+    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
+      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
+      .first();
+    
+    console.log(`Loading CHIRPS rainfall data for year ${year}...`);
+    // Load CHIRPS Daily precipitation data for the requested year
+    const rainfallCollection = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+      .filter(ee.Filter.date(`${year}-01-01`, `${year}-12-31`))
+      .select('precipitation');
+    
+    // Check if data exists for this year
+    rainfallCollection.size().getInfo((size, sizeError) => {
+      if (sizeError) {
+        console.error('Error checking rainfall dataset size:', sizeError);
+        return res.status(500).send({
+          success: false,
+          error: `Error accessing CHIRPS data: ${sizeError.message}`
+        });
+      }
+      
+      if (size === 0) {
+        console.log(`No CHIRPS data found for year ${year}`);
+        return res.status(404).send({
+          success: false,
+          error: `No rainfall data available for year ${year}`
+        });
+      }
+      
+      console.log(`Found ${size} rainfall images for year ${year}`);
+      
+      // Calculate the total annual precipitation
+      console.log('Calculating annual total precipitation...');
+      const annualRainfall = rainfallCollection.sum();
+      
+      // Clip to Uttar Pradesh boundaries
+      console.log('Clipping rainfall data to Uttar Pradesh boundaries...');
+      const clippedRainfall = annualRainfall.clip(uttarPradeshROI.geometry());
+      
+      // Define visualization parameters suitable for rainfall
+      const rainfallVisParams = {
+        min: 0,
+        max: 2000, // mm per year
+        palette: ['white', 'lightblue', 'blue', 'darkblue', 'purple']
+      };
+      
+      console.log('Generating rainfall map tiles...');
+      // Generate map ID and token
+      clippedRainfall.getMap(rainfallVisParams, (result, error) => {
+        if (error) {
+          console.error('Error generating rainfall map:', error);
+          return res.status(500).send({
+            success: false,
+            error: `Failed to generate rainfall map: ${error.message}`
+          });
+        }
+        
+        if (!result || !result.mapid) {
+          console.error('Invalid rainfall map result - missing mapid');
+          return res.status(500).send({
+            success: false,
+            error: 'Invalid rainfall map data received from Earth Engine'
+          });
+        }
+        
+        console.log(`Successfully generated rainfall map ID: ${result.mapid}`);
+        
+        // Prepare response with mapId and token
+        const response = { 
+          success: true, 
+          mapid: result.mapid, 
+          token: result.token || '',
+          year: year,
+          dataType: 'rainfall',
+          units: 'mm/year',
+          source: 'CHIRPS Daily',
+          region: 'Uttar Pradesh'
+        };
+        
+        // Include urlFormat if available (newer API)
+        if (result.urlFormat) {
+          response.urlFormat = result.urlFormat;
+        }
+        
+        // Cache the successful result
+        tileCache[cacheKey] = response;
+        console.log(`Cached rainfall result for year ${year}`);
+        
+        res.send(response);
+      });
+    });
+  } catch (error) {
+    console.error('Exception in ee-rainfall-layer endpoint:', error);
+    res.status(500).send({ 
+      success: false, 
+      error: error.message 
+    });
   }
 });
 
@@ -260,6 +640,137 @@ app.get('/debug', (req, res) => {
 app.get('/spinner-test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'spinner-test.html'));
 });
+
+// Bulk load endpoint with Server-Sent Events
+app.get('/ee-bulk-load', async (req, res) => {
+  const startYear = parseInt(req.query.startYear) || 1979;
+  const endYear = parseInt(req.query.endYear) || 2020;
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  let processedYears = 0;
+  const totalYears = endYear - startYear + 1;
+
+  try {
+    for (let year = startYear; year <= endYear; year++) {
+      const cacheKey = `temp_${year}`;
+      
+      // Skip if already cached
+      if (tileCache[cacheKey]) {
+        processedYears++;
+        const progress = Math.round((processedYears / totalYears) * 100);
+        res.write(`data: ${JSON.stringify({
+          progress,
+          year,
+          status: `Cached: ${year}`,
+          cached: true
+        })}\n\n`);
+        continue;
+      }
+
+      // Send progress update
+      res.write(`data: ${JSON.stringify({
+        progress: Math.round((processedYears / totalYears) * 100),
+        year,
+        status: `Loading: ${year}`,
+        cached: false
+      })}\n\n`);
+
+      // Load data for this year using the same logic as /ee-temp-layer
+      const result = await loadYearData(year);
+      
+      if (result.success) {
+        // Cache the result
+        tileCache[cacheKey] = result;
+        processedYears++;
+        
+        const progress = Math.round((processedYears / totalYears) * 100);
+        res.write(`data: ${JSON.stringify({
+          progress,
+          year,
+          status: `Completed: ${year}`,
+          cached: false,
+          mapid: result.mapid,
+          token: result.token,
+          urlFormat: result.urlFormat
+        })}\n\n`);
+      } else {
+        console.error(`Failed to load year ${year}:`, result.error);
+        res.write(`data: ${JSON.stringify({
+          progress: Math.round((processedYears / totalYears) * 100),
+          year,
+          status: `Error: ${year}`,
+          error: result.error
+        })}\n\n`);
+      }
+    }
+
+    // Send completion
+    res.write(`data: ${JSON.stringify({
+      completed: true,
+      totalYears: processedYears,
+      progress: 100
+    })}\n\n`);
+    
+  } catch (error) {
+    console.error('Bulk loading error:', error);
+    res.write(`data: ${JSON.stringify({
+      error: error.message
+    })}\n\n`);
+  }
+  
+  res.end();
+});
+
+// Helper function with 5°C temperature range for maximum contrast
+async function loadYearData(year) {
+  return new Promise((resolve) => {
+    try {
+      const collection = ee.ImageCollection('ECMWF/ERA5/DAILY');
+      const startDate = `${year}-01-01`;
+      const endDate = `${year}-12-31`;
+      
+      const dateFiltered = collection.filter(ee.Filter.date(startDate, endDate));
+      const dataset = dateFiltered.select('mean_2m_air_temperature');
+      const tempCelsius = dataset.mean().subtract(273.15);
+      
+      const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
+        .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+      
+      const clippedImage = tempCelsius.clip(uttarPradeshROI);
+      
+      // Very narrow 5°C range for maximum contrast
+      const visParams = {
+        min: 25,    // 25°C
+        max: 30,    // 30°C (5°C total range)
+        palette: ['blue', 'cyan', 'green', 'yellow', 'orange', 'red']
+      };
+      
+      clippedImage.getMap(visParams, (result, error) => {
+        if (error) {
+          console.error(`Error loading year ${year}:`, error);
+          resolve({ success: false, error: error.message });
+        } else {
+          resolve({
+            success: true,
+            mapid: result.mapid,
+            token: result.token || '',
+            year: year,
+            dataType: 'temperature',
+            urlFormat: result.urlFormat
+          });
+        }
+      });
+    } catch (error) {
+      resolve({ success: false, error: error.message });
+    }
+  });
+}
 
 // Start the server
 app.listen(port, () => {

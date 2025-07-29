@@ -6,6 +6,12 @@ let isLoading = false;
 let isInitialized = false;
 let earthEngineData = {}; // Store Earth Engine responses for analysis
 
+// Global variables for time-lapse
+let timelapseInterval = null;
+let timelapseData = {};
+let isTimelapseRunning = false;
+let currentTimelapseYear = 1979;
+
 // Utility function for debouncing
 function debounce(func, delay) {
   let timeoutId;
@@ -53,23 +59,17 @@ function initMapInternal() {
   try {
     console.log("Initializing Google Map...");
     
-    // Check if Google Maps API is loaded
     if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
       console.error("Google Maps API not loaded!");
       showError("Google Maps API failed to load. Please refresh the page.");
       return;
     }
     
-    // Center on Uttar Pradesh, India with better bounds
-    const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 }; // Lucknow coordinates
+    const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
     const uttarPradeshBounds = {
-      north: 29.3,  // Northern boundary
-      south: 23.9,  // Southern boundary
-      east: 84.6,   // Eastern boundary
-      west: 77.1    // Western boundary
+      north: 29.3, south: 23.9, east: 84.6, west: 77.1
     };
     
-    // Check if the map element exists
     const mapElement = document.getElementById('map');
     if (!mapElement) {
       console.error("Map element not found!");
@@ -77,9 +77,7 @@ function initMapInternal() {
       return;
     }
     
-    console.log("Map element found, creating Google Map instance...");
-    
-    // Create the map with optimized settings for Uttar Pradesh
+    // Create map with better initial settings
     map = new google.maps.Map(mapElement, {
       center: uttarPradeshCenter,
       zoom: 7,
@@ -90,37 +88,28 @@ function initMapInternal() {
       restriction: {
         latLngBounds: uttarPradeshBounds,
         strictBounds: false
-      },
-      styles: [
-        {
-          featureType: 'administrative.province',
-          elementType: 'geometry.stroke',
-          stylers: [{ color: '#4d90fe' }, { weight: 1.5 }]
-        },
-        {
-          featureType: 'administrative.locality',
-          elementType: 'labels.text.fill',
-          stylers: [{ color: '#1a73e8' }]
-        }
-      ]
+      }
     });
     
-    console.log("Map initialized, loading timelapse layer...");
+    console.log("Map created, waiting for idle state...");
     
-    // Add a listener for when the map is idle (fully loaded)
+    // Wait for map to be fully loaded before adding overlays
     google.maps.event.addListenerOnce(map, 'idle', function() {
-      console.log("Map is idle, loading initial data...");
-      // Load the initial year's data
-      loadTimelapseLayer(selectedYear);
+      console.log("Map is idle, loading initial temperature data...");
+      hideLoadingSpinner();
       
-      // Signal that the app has loaded successfully
+      // Load initial temperature data
+      loadTemperatureLayer(selectedYear);
+      
       if (window.appLoaded) {
         window.appLoaded();
       }
     });
+    
   } catch (error) {
     console.error("Error initializing map:", error);
     hideLoadingSpinner();
+    showError("Failed to initialize map: " + error.message);
   }
 }
 
@@ -130,18 +119,25 @@ function setupEventListeners() {
   const yearSlider = document.getElementById('year-slider');
   const selectedYearDisplay = document.getElementById('selected-year');
   
-  // Create debounced version of loadTimelapseLayer
-  const debouncedLoadTimelapseLayer = debounce(loadTimelapseLayer, 300);
+  // Create debounced version of loadTemperatureLayer for time-lapse feature
+  // Reduced debounce time for more responsive time-lapse
+  const debouncedLoadTemperatureLayer = debounce(loadTemperatureLayer, 100);
   
   yearSlider.addEventListener('input', function() {
     selectedYear = parseInt(this.value);
-    selectedYearDisplay.textContent = selectedYear;
     
     // Update display immediately for responsiveness
     selectedYearDisplay.textContent = selectedYear;
     
-    // Load data with debouncing to prevent too many requests
-    debouncedLoadTimelapseLayer(selectedYear);
+    console.log(`Year slider changed to: ${selectedYear}`);
+    
+    if (timelapseData[selectedYear]) {
+      // Use cached data for instant display
+      displayCachedYear(selectedYear);
+    } else {
+      // Load from server
+      debouncedLoadTemperatureLayer(selectedYear);
+    }
   });
   
   // Prediction button
@@ -194,13 +190,129 @@ function setupEventListeners() {
   } else {
     console.error("Close loading button not found!");
   }
+
+  // Bulk loading button
+  const loadAllBtn = document.getElementById('load-all-data-btn');
+  loadAllBtn.addEventListener('click', startBulkLoading);
+
+  // Time-lapse controls
+  const playBtn = document.getElementById('play-timelapse-btn');
+  const pauseBtn = document.getElementById('pause-timelapse-btn');
+  const stopBtn = document.getElementById('stop-timelapse-btn');
+
+  playBtn.addEventListener('click', startTimelapse);
+  pauseBtn.addEventListener('click', pauseTimelapse);
+  stopBtn.addEventListener('click', stopTimelapse);
 }
 
-// Load the Earth Engine timelapse layer for a specific year
-function loadTimelapseLayer(year) {
+// Load the dedicated Earth Engine temperature layer for time-lapse feature
+function loadTemperatureLayer(year) {
+  if (isLoading) {
+    console.log("Already loading temperature data, request ignored");
+    return;
+  }
+  
+  isLoading = true;
+  showLoadingSpinner();
+  
+  console.log(`Loading temperature layer for year ${year}...`);
+  
+  // Remove previous overlay completely
+  if (currentOverlay) {
+    console.log("Removing previous temperature overlay");
+    map.overlayMapTypes.clear();
+    currentOverlay = null;
+  }
+  
+  // Remove existing legend
+  const existingLegend = document.getElementById('temp-legend');
+  if (existingLegend) {
+    existingLegend.remove();
+  }
+  
+  // Fetch temperature data
+  const urlParams = new URLSearchParams(window.location.search);
+  const debugMode = urlParams.get('debug') === 'true';
+  const cacheParam = debugMode ? '&nocache=true' : '';
+  
+  fetch(`/ee-temp-layer?year=${year}${cacheParam}`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Temperature layer response:', data);
+      
+      if (data.success && data.mapid) {
+        // Create tile URL function
+        let getTileUrlFunction;
+        
+        if (data.urlFormat) {
+          getTileUrlFunction = function(tile, zoom) {
+            const url = data.urlFormat
+              .replace('{z}', zoom)
+              .replace('{x}', tile.x)
+              .replace('{y}', tile.y);
+            console.log(`Tile URL: ${url}`);
+            return url;
+          };
+        } else {
+          getTileUrlFunction = function(tile, zoom) {
+            const baseUrl = `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}`;
+            const token = data.token ? `?token=${data.token}` : '';
+            const cacheBuster = `${token ? '&' : '?'}cb=${Date.now()}&year=${year}`;
+            const url = `${baseUrl}${token}${cacheBuster}`;
+            console.log(`Tile URL: ${url}`);
+            return url;
+          };
+        }
+        
+        // Create the tile source
+        const tileSource = new google.maps.ImageMapType({
+          name: `Temperature ${year}`,
+          getTileUrl: getTileUrlFunction,
+          tileSize: new google.maps.Size(256, 256),
+          minZoom: 1,
+          maxZoom: 20,
+          opacity: 0.7
+        });
+        
+        // Add overlay
+        console.log("Adding temperature layer to map");
+        map.overlayMapTypes.clear();
+        map.overlayMapTypes.insertAt(0, tileSource);
+        currentOverlay = tileSource;
+        
+        // Add temperature legend
+        addTemperatureLegend();
+        
+        // Force map refresh
+        setTimeout(() => {
+          google.maps.event.trigger(map, 'resize');
+          map.setZoom(map.getZoom());
+        }, 500);
+        
+        console.log(`Temperature layer loaded for year ${year}`);
+        hideLoadingSpinner();
+      }
+    })
+    .catch(error => {
+      console.error('Error loading temperature layer:', error);
+      hideLoadingSpinner();
+      showError('Failed to load temperature data: ' + error.message);
+    })
+    .finally(() => {
+      isLoading = false;
+    });
+}
+
+// Load the Earth Engine rainfall layer for a specific year
+function loadRainfallLayer(year) {
   // Prevent multiple simultaneous requests
   if (isLoading) {
-    console.log("Already loading data, request ignored");
+    console.log("Already loading rainfall data, request ignored");
     return;
   }
   
@@ -209,11 +321,11 @@ function loadTimelapseLayer(year) {
   
   // Performance monitoring
   const startTime = performance.now();
-  console.log(`Loading timelapse layer for year ${year}...`);
+  console.log(`Loading rainfall layer for year ${year}...`);
   
   // Remove previous overlay if it exists
   if (currentOverlay) {
-    console.log("Removing previous overlay");
+    console.log("Removing previous rainfall overlay");
     
     // Check if it's a rectangle (simulated data) or a map overlay
     if (currentOverlay instanceof google.maps.Rectangle) {
@@ -226,9 +338,9 @@ function loadTimelapseLayer(year) {
     currentOverlay = null;
   }
   
-  // Fetch the Earth Engine layer from our backend
-  console.log("Fetching Earth Engine layer from backend...");
-  fetch(`/ee-timelapse-layer?year=${year}`)
+  // Fetch the rainfall layer from our backend
+  console.log("Fetching rainfall layer from backend...");
+  fetch(`/ee-rainfall-layer?year=${year}`)
     .then(response => {
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
@@ -236,133 +348,78 @@ function loadTimelapseLayer(year) {
       return response.json();
     })
     .then(data => {
-      console.log("Received response from server:", data);
+      console.log("Received rainfall response from server:", data);
       if (data.success) {
-        console.log("Received successful response:", data);
+        console.log("Received successful rainfall response:", data);
         
         // Store the Earth Engine data for analysis
-        earthEngineData[year] = data;
-        console.log("Earth Engine data structure for year", year, ":", {
+        earthEngineData[`rainfall_${year}`] = data;
+        console.log("Rainfall data structure for year", year, ":", {
           success: data.success,
           mapid: data.mapid,
           token: data.token,
           year: data.year,
-          simulated: data.simulated,
-          urlFormat: data.urlFormat,
-          fallback_reason: data.fallback_reason
+          dataType: data.dataType,
+          units: data.units,
+          source: data.source,
+          region: data.region,
+          urlFormat: data.urlFormat
         });
         
-        // Check if this is a simulated response
-        if (data.simulated) {
-          console.log("Using simulated temperature layer");
-          
-          // Create a simulated overlay using a colored rectangle for demonstration
-          const bounds = {
-            north: 29.3,  // Northern boundary of Uttar Pradesh
-            south: 23.9,  // Southern boundary of Uttar Pradesh
-            east: 84.6,   // Eastern boundary of Uttar Pradesh
-            west: 77.1    // Western boundary of Uttar Pradesh
+        // Create the tile layer using the mapid and token (or urlFormat for newer API)
+        console.log("Creating rainfall tile layer with mapid:", data.mapid);
+        
+        let getTileUrlFunction;
+        
+        if (data.urlFormat) {
+          // Use the new urlFormat from Earth Engine API
+          console.log("Using new Earth Engine API urlFormat:", data.urlFormat);
+          getTileUrlFunction = function(tile, zoom) {
+            return data.urlFormat.replace('{z}', zoom).replace('{x}', tile.x).replace('{y}', tile.y);
           };
-          
-          // Create a colored rectangle overlay
-          const rectangle = new google.maps.Rectangle({
-            bounds: bounds,
-            strokeColor: '#FF0000',
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
-            fillColor: '#FF9900',
-            fillOpacity: 0.35,
-            map: map
-          });
-          
-          // Store the rectangle as the current overlay
-          currentOverlay = rectangle;
-          
-          // Add a label to indicate this is simulated data
-          const center = new google.maps.LatLng(
-            (bounds.north + bounds.south) / 2,
-            (bounds.east + bounds.west) / 2
-          );
-          
-          const infoWindow = new google.maps.InfoWindow({
-            content: `<div style="padding: 10px; text-align: center;">
-                      <h3 style="margin-top: 0;">${data.fallback_reason ? 'Fallback' : 'Simulated'} Temperature Data</h3>
-                      <p>Year: ${year}</p>
-                      ${data.fallback_reason ? 
-                        `<p>Earth Engine error: ${data.fallback_reason}</p>
-                         <p>Using simulated data as fallback.</p>` :
-                        `<p>This is a demonstration using simulated data.</p>
-                         <p>The actual Earth Engine integration requires additional setup.</p>`
-                      }
-                    </div>`,
-            position: center
-          });
-          
-          infoWindow.open(map);
-          
-          // Close the info window when clicking on the map
-          google.maps.event.addListenerOnce(map, 'click', function() {
-            infoWindow.close();
-          });
-          
-          console.log("Simulated layer added successfully");
-          hideLoadingSpinner();
         } else {
-          // Create the tile layer using the mapid and token (or urlFormat for newer API)
-          console.log("Creating tile layer with mapid:", data.mapid);
-          
-          let getTileUrlFunction;
-          
-          if (data.urlFormat) {
-            // Use the new urlFormat from Earth Engine API
-            console.log("Using new Earth Engine API urlFormat:", data.urlFormat);
-            getTileUrlFunction = function(tile, zoom) {
-              return data.urlFormat.replace('{z}', zoom).replace('{x}', tile.x).replace('{y}', tile.y);
-            };
-          } else {
-            // Use the legacy format with mapid and token
-            console.log("Using legacy Earth Engine API format");
-            getTileUrlFunction = function(tile, zoom) {
-              return `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}?token=${data.token}`;
-            };
-          }
-          
-          const tileSource = new google.maps.ImageMapType({
-            name: `Temperature ${year}`,
-            getTileUrl: getTileUrlFunction,
-            tileSize: new google.maps.Size(256, 256),
-            minZoom: 1,
-            maxZoom: 20
-          });
-          
-          // Add the layer to the map
-          console.log("Adding layer to map");
-          map.overlayMapTypes.clear();
-          map.overlayMapTypes.push(tileSource);
-          currentOverlay = tileSource;
-          
-          console.log("Layer added successfully");
-          
-          // Wait for tiles to start loading, then hide spinner
-          setTimeout(() => {
-            const endTime = performance.now();
-            const loadTime = (endTime - startTime).toFixed(2);
-            console.log(`Delayed spinner hide - ensuring tiles have started loading`);
-            console.log(`Total load time for year ${year}: ${loadTime}ms`);
-            hideLoadingSpinner();
-          }, 1500);
-          
-          // Also hide spinner immediately if user clicks close button
-          const closeBtn = document.getElementById('close-loading-btn');
-          if (closeBtn) {
-            closeBtn.style.display = 'block';
-            closeBtn.style.pointerEvents = 'auto';
-          }
+          // Use the legacy format with mapid and token
+          console.log("Using legacy Earth Engine API format");
+          getTileUrlFunction = function(tile, zoom) {
+            return `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}?token=${data.token}`;
+          };
+        }
+        
+        const tileSource = new google.maps.ImageMapType({
+          name: `Rainfall ${year}`,
+          getTileUrl: getTileUrlFunction,
+          tileSize: new google.maps.Size(256, 256),
+          minZoom: 1,
+          maxZoom: 20,
+          opacity: 0.6 // Make rainfall overlay semi-transparent
+        });
+        
+        // Add the layer to the map
+        console.log("Adding rainfall layer to map");
+        map.overlayMapTypes.clear();
+        map.overlayMapTypes.push(tileSource);
+        currentOverlay = tileSource;
+        
+        console.log("Rainfall layer added successfully");
+        
+        // Wait for tiles to start loading, then hide spinner
+        setTimeout(() => {
+          const endTime = performance.now();
+          const loadTime = (endTime - startTime).toFixed(2);
+          console.log(`Rainfall layer loaded for year ${year} in ${loadTime}ms`);
+          hideLoadingSpinner();
+        }, 1500);
+        
+        // Also hide spinner immediately if user clicks close button
+        const closeBtn = document.getElementById('close-loading-btn');
+        if (closeBtn) {
+          closeBtn.style.display = 'block';
+          closeBtn.style.pointerEvents = 'auto';
         }
       } else {
-        console.error('Error loading Earth Engine layer:', data.error);
+        console.error('Error loading rainfall layer:', data.error);
         hideLoadingSpinner();
-        alert('Error loading climate data: ' + (data.error || 'Unknown error'));
+        showError('Error loading rainfall data: ' + (data.error || 'Unknown error'));
       }
       isLoading = false;
     })
@@ -375,7 +432,7 @@ function loadTimelapseLayer(year) {
       const errorText = document.getElementById('error-text');
       
       if (errorMessage && errorText) {
-        errorText.textContent = 'Error loading climate data: ' + error.message;
+        errorText.textContent = 'Error loading rainfall data: ' + error.message;
         errorMessage.classList.remove('hidden');
       } else {
         alert('Error: ' + error.message);
@@ -383,6 +440,12 @@ function loadTimelapseLayer(year) {
       
       isLoading = false;
     });
+}
+
+// Load the Earth Engine timelapse layer for a specific year (legacy function)
+function loadTimelapseLayer(year) {
+  // For backward compatibility, call the new temperature layer function
+  loadTemperatureLayer(year);
 }
 
 // Analyze Earth Engine data structure and format
@@ -746,4 +809,342 @@ if (typeof window !== 'undefined') {
   window.hideLoadingSpinner = hideLoadingSpinner;
   window.showLoadingSpinner = showLoadingSpinner;
   window.analyzeEarthEngineData = analyzeEarthEngineData;
+}
+
+// Bulk loading with progress tracking
+function startBulkLoading() {
+  const startYear = parseInt(document.getElementById('start-year').value);
+  const endYear = parseInt(document.getElementById('end-year').value);
+  
+  if (startYear >= endYear) {
+    alert('Start year must be less than end year');
+    return;
+  }
+
+  const loadingSection = document.getElementById('loading-progress');
+  const progressFill = document.getElementById('progress-fill');
+  const progressPercentage = document.getElementById('progress-percentage');
+  const progressStatus = document.getElementById('progress-status');
+  
+  loadingSection.classList.remove('hidden');
+  document.getElementById('load-all-data-btn').disabled = true;
+
+  // Create EventSource for Server-Sent Events
+  const eventSource = new EventSource(`/ee-bulk-load?startYear=${startYear}&endYear=${endYear}`);
+
+  eventSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    
+    // Update progress bar
+    progressFill.style.width = `${data.progress}%`;
+    progressPercentage.textContent = `${data.progress}%`;
+    progressStatus.textContent = data.status;
+    
+    // Store cached data with complete structure
+    if (data.mapid && !data.cached) {
+      timelapseData[data.year] = {
+        mapid: data.mapid,
+        token: data.token || '',
+        year: data.year,
+        dataType: 'temperature',
+        urlFormat: data.urlFormat
+      };
+      console.log(`Cached data for year ${data.year}:`, timelapseData[data.year]);
+    }
+    
+    // Handle completion
+    if (data.completed) {
+      eventSource.close();
+      document.getElementById('load-all-data-btn').disabled = false;
+      document.getElementById('timelapse-controls').classList.remove('hidden');
+      
+      // Update slider range
+      document.getElementById('year-slider').min = startYear;
+      document.getElementById('year-slider').max = endYear;
+      
+      progressStatus.textContent = `Complete! Loaded ${data.totalYears} years`;
+      console.log('All data cached:', Object.keys(timelapseData).length, 'years');
+      
+      setTimeout(() => {
+        loadingSection.classList.add('hidden');
+      }, 2000);
+    }
+    
+    // Handle errors
+    if (data.error) {
+      console.error('Loading error:', data.error);
+      progressStatus.textContent = `Error: ${data.error}`;
+    }
+  };
+
+  eventSource.onerror = function(error) {
+    console.error('EventSource error:', error);
+    eventSource.close();
+    document.getElementById('load-all-data-btn').disabled = false;
+    progressStatus.textContent = 'Connection error';
+  };
+}
+
+// Display cached year data with proper tile loading detection
+function displayCachedYear(year) {
+  return new Promise((resolve, reject) => {
+    console.log(`🎬 [TIMELAPSE] Starting display for year ${year}`);
+    
+    const data = timelapseData[year];
+    if (!data) {
+      console.error(`❌ [TIMELAPSE] No cached data for year ${year}`);
+      resolve();
+      return;
+    }
+    
+    console.log(`✅ [TIMELAPSE] Found cached data for year ${year}`);
+    
+    // Remove previous overlay
+    if (currentOverlay) {
+      console.log(`🗑️ [TIMELAPSE] Removing previous overlay`);
+      map.overlayMapTypes.clear();
+      currentOverlay = null;
+    }
+    
+    // Track tile loading
+    let tilesRequested = 0;
+    let tilesLoaded = 0;
+    let tilesErrored = 0;
+    let loadingStarted = false;
+    let resolved = false;
+    
+    // Create tile URL function with loading tracking
+    const getTileUrlFunction = function(tile, zoom) {
+      tilesRequested++;
+      loadingStarted = true;
+      
+      let url;
+      if (data.urlFormat) {
+        url = data.urlFormat
+          .replace('{z}', zoom)
+          .replace('{x}', tile.x)
+          .replace('{y}', tile.y);
+      } else {
+        const baseUrl = `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}`;
+        const token = data.token ? `?token=${data.token}` : '';
+        const cacheBuster = `${token ? '&' : '?'}cb=${Date.now()}&year=${year}`;
+        url = `${baseUrl}${token}${cacheBuster}`;
+      }
+      
+      console.log(`🔗 [TIMELAPSE] Tile ${tilesRequested} requested for year ${year}: ${tile.x},${tile.y},${zoom}`);
+      
+      // Test if tile loads by creating an image
+      const testImg = new Image();
+      testImg.onload = function() {
+        tilesLoaded++;
+        console.log(`✅ [TIMELAPSE] Tile loaded for year ${year}: ${tilesLoaded}/${tilesRequested}`);
+        checkTileLoadingComplete();
+      };
+      testImg.onerror = function() {
+        tilesErrored++;
+        console.log(`❌ [TIMELAPSE] Tile error for year ${year}: ${tilesErrored}/${tilesRequested}`);
+        checkTileLoadingComplete();
+      };
+      testImg.src = url;
+      
+      return url;
+    };
+    
+    // Check if all tiles are loaded
+    function checkTileLoadingComplete() {
+      const totalProcessed = tilesLoaded + tilesErrored;
+      console.log(`📊 [TIMELAPSE] Year ${year} tile status: ${totalProcessed}/${tilesRequested} (${tilesLoaded} loaded, ${tilesErrored} errors)`);
+      
+      if (totalProcessed >= tilesRequested && tilesRequested > 0 && !resolved) {
+        resolved = true;
+        console.log(`🎉 [TIMELAPSE] All tiles processed for year ${year}, resolving`);
+        resolve();
+      }
+    }
+    
+    // Create tile source
+    const tileSource = new google.maps.ImageMapType({
+      name: `Temperature ${year}`,
+      getTileUrl: getTileUrlFunction,
+      tileSize: new google.maps.Size(256, 256),
+      minZoom: 1,
+      maxZoom: 20,
+      opacity: 0.7
+    });
+    
+    console.log(`🗺️ [TIMELAPSE] Created tile source for year ${year}`);
+    
+    // Add to map
+    map.overlayMapTypes.push(tileSource);
+    currentOverlay = tileSource;
+    
+    console.log(`📍 [TIMELAPSE] Added overlay to map for year ${year}`);
+    
+    // Update UI immediately
+    document.getElementById('selected-year').textContent = year;
+    document.getElementById('year-slider').value = year;
+    
+    // Force map refresh to trigger tile loading
+    setTimeout(() => {
+      google.maps.event.trigger(map, 'resize');
+      map.setZoom(map.getZoom());
+      console.log(`🔄 [TIMELAPSE] Triggered map refresh for year ${year}`);
+    }, 100);
+    
+    // Fallback timeout - wait up to 10 seconds for tiles
+    const fallbackTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        console.log(`⏰ [TIMELAPSE] Timeout reached for year ${year} (${tilesLoaded}/${tilesRequested} tiles loaded)`);
+        resolve();
+      }
+    }, 10000); // 10 second maximum wait
+    
+    // If no tiles are requested within 3 seconds, assume viewport issue and continue
+    setTimeout(() => {
+      if (!loadingStarted && !resolved) {
+        resolved = true;
+        console.log(`⚠️ [TIMELAPSE] No tiles requested for year ${year}, continuing`);
+        resolve();
+      }
+    }, 3000);
+  });
+}
+
+// Simplified time-lapse with better logging
+async function startTimelapse() {
+  console.log(`🎬 [TIMELAPSE] Starting time-lapse...`);
+  
+  if (Object.keys(timelapseData).length === 0) {
+    console.error(`❌ [TIMELAPSE] No cached data available`);
+    alert('Please load data first using "Load All Historical Data" button');
+    return;
+  }
+  
+  const speed = parseInt(document.getElementById('timelapse-speed').value);
+  const years = Object.keys(timelapseData).map(Number).sort((a, b) => a - b);
+  
+  console.log(`📊 [TIMELAPSE] Available years:`, years);
+  console.log(`⚡ [TIMELAPSE] Speed setting: ${speed}ms delay between years`);
+  
+  if (years.length === 0) {
+    console.error(`❌ [TIMELAPSE] No valid years found in cached data`);
+    alert('No cached data available for time-lapse');
+    return;
+  }
+  
+  isTimelapseRunning = true;
+  
+  // Update UI
+  document.getElementById('play-timelapse-btn').classList.add('hidden');
+  document.getElementById('pause-timelapse-btn').classList.remove('hidden');
+  
+  console.log(`🚀 [TIMELAPSE] Starting time-lapse with ${years.length} years`);
+  
+  // Process each year sequentially
+  for (let i = 0; i < years.length && isTimelapseRunning; i++) {
+    const year = years[i];
+    currentTimelapseYear = year;
+    
+    console.log(`\n🎯 [TIMELAPSE] === YEAR ${year} (${i + 1}/${years.length}) ===`);
+    
+    try {
+      const startTime = performance.now();
+      
+      // Wait for tiles to load completely
+      await displayCachedYear(year);
+      
+      const loadTime = (performance.now() - startTime).toFixed(0);
+      console.log(`✅ [TIMELAPSE] Year ${year} completed in ${loadTime}ms`);
+      
+      // Wait additional delay before next year
+      if (isTimelapseRunning && i < years.length - 1) {
+        console.log(`⏳ [TIMELAPSE] Waiting ${speed}ms before next year...`);
+        await new Promise(resolve => setTimeout(resolve, speed));
+      }
+      
+    } catch (error) {
+      console.error(`❌ [TIMELAPSE] Error with year ${year}:`, error);
+    }
+  }
+  
+  if (isTimelapseRunning) {
+    console.log(`🎉 [TIMELAPSE] Time-lapse completed!`);
+    stopTimelapse();
+  }
+}
+
+function pauseTimelapse() {
+  console.log(`⏸️ [TIMELAPSE] Pausing time-lapse at year ${currentTimelapseYear}`);
+  isTimelapseRunning = false;
+  
+  // Update UI
+  document.getElementById('play-timelapse-btn').classList.remove('hidden');
+  document.getElementById('pause-timelapse-btn').classList.add('hidden');
+}
+
+function stopTimelapse() {
+  console.log(`⏹️ [TIMELAPSE] Stopping time-lapse`);
+  isTimelapseRunning = false;
+  
+  // Update UI
+  document.getElementById('play-timelapse-btn').classList.remove('hidden');
+  document.getElementById('pause-timelapse-btn').classList.add('hidden');
+}
+
+// Debug function to check cached data
+window.debugTimelapseCache = function() {
+  console.log(`📊 [DEBUG] Cached timelapse data:`, timelapseData);
+  console.log(`📊 [DEBUG] Number of cached years:`, Object.keys(timelapseData).length);
+  console.log(`📊 [DEBUG] Available years:`, Object.keys(timelapseData).map(Number).sort((a, b) => a - b));
+  
+  // Check data structure for each year
+  Object.keys(timelapseData).forEach(year => {
+    const data = timelapseData[year];
+    console.log(`📊 [DEBUG] Year ${year}:`, {
+      hasMapid: !!data.mapid,
+      hasToken: !!data.token,
+      hasUrlFormat: !!data.urlFormat,
+      dataType: data.dataType
+    });
+  });
+};
+
+// Add temperature legend to the map
+function addTemperatureLegend() {
+  const legend = document.createElement('div');
+  legend.id = 'temp-legend';
+  legend.style.cssText = `
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255,255,255,0.9);
+    padding: 10px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 1000;
+  `;
+  
+  legend.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 5px;">Temperature (°C)</div>
+    <div style="display: flex; align-items: center;">
+      <div style="width: 200px; height: 20px; background: linear-gradient(to right, 
+        #000080, #0000d9, #4000ff, #8000ff, #0080ff, #00ffff, 
+        #00ff80, #80ff00, #daff00, #ffff00, #fff500, #ffda00, 
+        #ffb000, #ffa400, #ff4f00, #ff2500, #ff0a00, #ff00ff); 
+        border: 1px solid #ccc;"></div>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+      <span>25°C</span>
+      <span>27.5°C</span>
+      <span>30°C</span>
+    </div>
+    <div style="font-size: 10px; color: #666; margin-top: 3px;">
+      High contrast: 5°C range for detailed variations
+    </div>
+  `;
+  
+  document.getElementById('map').appendChild(legend);
 }
