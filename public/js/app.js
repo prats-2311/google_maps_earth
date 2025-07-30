@@ -1630,6 +1630,16 @@ function displayCachedYear(year) {
   return new Promise((resolve, reject) => {
     console.log(`🎬 [TIMELAPSE] Starting display for year ${year}`);
     
+    // Check if we have cached data for the current visualization mode
+    const cachedData = cachedVisualizationData[currentVisualizationMode]?.[year];
+    if (cachedData) {
+      console.log(`✅ [TIMELAPSE] Using cached ${currentVisualizationMode} data for year ${year}`);
+      loadVisualizationFromCache(cachedData, year);
+      resolve();
+      return;
+    }
+    
+    // Fallback to temperature data if no cached data for current mode
     const data = timelapseData[year];
     if (!data) {
       console.error(`❌ [TIMELAPSE] No cached data for year ${year}`);
@@ -1637,7 +1647,15 @@ function displayCachedYear(year) {
       return;
     }
     
-    console.log(`✅ [TIMELAPSE] Found cached data for year ${year}`);
+    console.log(`✅ [TIMELAPSE] Found cached temperature data for year ${year}, but current mode is ${currentVisualizationMode}`);
+    
+    // If current mode is not temperature, try to load the correct visualization
+    if (currentVisualizationMode !== 'temperature') {
+      console.log(`🔄 [TIMELAPSE] Loading ${currentVisualizationMode} data for year ${year}...`);
+      loadVisualization(year);
+      resolve();
+      return;
+    }
     
     // Remove previous overlay
     if (currentOverlay) {
@@ -2124,9 +2142,26 @@ function addVisualizationControls() {
   const radios = controls.querySelectorAll('input[name="vizMode"]');
   radios.forEach(radio => {
     radio.addEventListener('change', (e) => {
+      const previousMode = currentVisualizationMode;
       currentVisualizationMode = e.target.value;
-      const currentYear = parseInt(document.getElementById('year-slider').value);
+      
+      console.log(`🎨 Visualization mode changed from ${previousMode} to ${currentVisualizationMode}`);
+      
+      // Get current year from either timelapse or slider
+      let currentYear;
+      if (isTimelapseActive) {
+        currentYear = currentTimelapseYear;
+        console.log(`📅 Using timelapse year: ${currentYear}`);
+      } else {
+        currentYear = parseInt(document.getElementById('year-slider').value);
+        console.log(`📅 Using slider year: ${currentYear}`);
+      }
+      
+      // Load visualization for the current year with new mode
       loadVisualization(currentYear);
+      
+      // Show status message
+      showStatusMessage(`🎨 Switched to ${currentVisualizationMode} mode for year ${currentYear}`);
     });
   });
   
@@ -2652,8 +2687,14 @@ function loadVisualization(year) {
   
   console.log(`🔄 Loading ${currentVisualizationMode} visualization for year ${year} from server...`);
   
-  fetch(endpoint)
+  // Add timeout for anomaly requests which can be slow
+  const timeoutMs = currentVisualizationMode === 'anomaly' ? 30000 : 15000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  fetch(endpoint, { signal: controller.signal })
     .then(response => {
+      clearTimeout(timeoutId);
       console.log(`Response status for ${currentVisualizationMode}:`, response.status);
       if (!response.ok) {
         return response.json().then(errorData => {
@@ -2681,14 +2722,24 @@ function loadVisualization(year) {
       hideLoadingSpinner();
     })
     .catch(error => {
+      clearTimeout(timeoutId);
       console.error(`Error loading ${currentVisualizationMode}:`, error);
       hideLoadingSpinner();
       
-      // Show specific error message
-      showError(`Failed to load ${currentVisualizationMode} for ${year}: ${error.message}`);
+      // Handle timeout errors specifically for anomaly
+      if (error.name === 'AbortError') {
+        if (currentVisualizationMode === 'anomaly') {
+          showError(`Temperature anomaly data is taking too long to load for ${year}. This may be due to server processing time. Please try again or switch to a different visualization mode.`);
+        } else {
+          showError(`Request timeout for ${currentVisualizationMode} data for ${year}. Please try again.`);
+        }
+      } else {
+        // Show specific error message
+        showError(`Failed to load ${currentVisualizationMode} for ${year}: ${error.message}`);
+      }
       
-      // Only fallback to temperature if we're not already trying temperature
-      if (currentVisualizationMode !== 'temperature') {
+      // Only fallback to temperature if we're not already trying temperature and it's not a timeout
+      if (currentVisualizationMode !== 'temperature' && error.name !== 'AbortError') {
         console.log("Falling back to temperature layer...");
         setTimeout(() => {
           currentVisualizationMode = 'temperature';
@@ -2713,12 +2764,20 @@ function loadVisualizationFromCache(data, year) {
   
   // Clear wind layer if exists
   if (windLayer) {
-    if (windLayer.remove) {
+    if (windLayer.setMap) {
+      windLayer.setMap(null);
+    } else if (windLayer.remove) {
       windLayer.remove();
     } else if (windLayer.parentNode) {
       windLayer.parentNode.removeChild(windLayer);
     }
     windLayer = null;
+  }
+  
+  // Also remove wind canvas if it exists
+  const windCanvas = document.getElementById('wind-canvas');
+  if (windCanvas) {
+    windCanvas.remove();
   }
   
   if (currentVisualizationMode === 'weather') {
@@ -2883,6 +2942,7 @@ function loadWindLayer(windData) {
     
   } else {
     console.log('🔄 Loading wind as particle system (legacy)...');
+    createWindCanvas();
     loadWindParticles(windData);
   }
 }
@@ -2926,10 +2986,53 @@ function addWindLegend(legendData) {
   document.getElementById('map').appendChild(legend);
 }
 
+// Create wind canvas for particle animation
+function createWindCanvas() {
+  // Remove existing wind canvas if it exists
+  const existingCanvas = document.getElementById('wind-canvas');
+  if (existingCanvas) {
+    existingCanvas.remove();
+  }
+  
+  // Create new canvas
+  const windCanvas = document.createElement('canvas');
+  windCanvas.id = 'wind-canvas';
+  windCanvas.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 100;
+  `;
+  
+  // Set canvas size to match map container
+  const mapContainer = document.getElementById('map');
+  if (mapContainer) {
+    windCanvas.width = mapContainer.offsetWidth;
+    windCanvas.height = mapContainer.offsetHeight;
+    mapContainer.appendChild(windCanvas);
+  }
+  
+  // Store global reference
+  window.windCanvas = windCanvas;
+  
+  console.log('🎨 Wind canvas created:', windCanvas.width, 'x', windCanvas.height);
+  return windCanvas;
+}
+
 // Legacy wind particle system (fallback)
 function loadWindParticles(windData) {
   const width = windData.width || 10;
   const height = windData.height || 10;
+  
+  // Get the wind canvas
+  const windCanvas = window.windCanvas || document.getElementById('wind-canvas');
+  if (!windCanvas) {
+    console.error('Wind canvas not found');
+    return;
+  }
   
   // Create Float32Arrays for the U and V components
   const uData = new Float32Array(windData.uData);
@@ -3146,11 +3249,11 @@ if (typeof window !== 'undefined') {
 
 // Add function to create appropriate legends for different visualization types
 function addVisualizationLegend(mode, year) {
-  // Remove existing legend
-  const existingLegend = document.querySelector('.visualization-legend');
-  if (existingLegend) {
-    existingLegend.remove();
-  }
+  // Remove all existing legends to prevent overlapping
+  const existingLegends = document.querySelectorAll('.visualization-legend, #temp-legend, #rainfall-legend, #wind-legend, #anomaly-legend, #terrain-legend');
+  existingLegends.forEach(legend => legend.remove());
+  
+  console.log(`🏷️ Adding ${mode} legend for year ${year}`);
   
   const legend = document.createElement('div');
   legend.className = 'visualization-legend';
@@ -3169,6 +3272,18 @@ function addVisualizationLegend(mode, year) {
   let legendContent = '';
   
   switch(mode) {
+    case 'weather':
+      legendContent = `
+        <div><strong>Temperature + Wind ${year}</strong></div>
+        <div style="margin-top: 5px;">
+          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+            <span>15°C</span><span>30°C</span><span>45°C</span>
+          </div>
+        </div>
+        <div style="margin-top: 5px; font-size: 10px;">Temperature with wind overlay</div>
+      `;
+      break;
     case 'anomaly':
       legendContent = `
         <div><strong>Temperature Anomaly ${year}</strong></div>
