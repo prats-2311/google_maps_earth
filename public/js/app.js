@@ -6,11 +6,20 @@ let isLoading = false;
 let isInitialized = false;
 let earthEngineData = {}; // Store Earth Engine responses for analysis
 
-// Global variables for time-lapse
-let timelapseInterval = null;
+// Global variables for user-controlled time-lapse
 let timelapseData = {};
-let isTimelapseRunning = false;
+let isTimelapseActive = false;
 let currentTimelapseYear = 1979;
+let timelapseYears = [];
+let currentYearIndex = 0;
+
+// Enhanced caching for all data types
+let cachedVisualizationData = {
+  temperature: {},
+  weather: {},
+  anomaly: {},
+  terrain: {}
+};
 
 // Enhanced visualization modes
 let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain'
@@ -197,26 +206,45 @@ function setupEventListeners() {
     });
   }
   
-  // Time-lapse control buttons
-  const playTimelapseBtn = document.getElementById('play-timelapse-btn');
-  if (playTimelapseBtn) {
-    playTimelapseBtn.addEventListener('click', function() {
-      startTimelapse();
+  // User-controlled time-lapse navigation buttons
+  const timelapseStartBtn = document.getElementById('timelapse-start-btn');
+  if (timelapseStartBtn) {
+    timelapseStartBtn.addEventListener('click', () => navigateToYear('first'));
+  }
+  
+  const timelapsePrevBtn = document.getElementById('timelapse-prev-btn');
+  if (timelapsePrevBtn) {
+    timelapsePrevBtn.addEventListener('click', () => navigateToYear('prev'));
+  }
+  
+  const timelapseNextBtn = document.getElementById('timelapse-next-btn');
+  if (timelapseNextBtn) {
+    timelapseNextBtn.addEventListener('click', () => navigateToYear('next'));
+  }
+  
+  const timelapseEndBtn = document.getElementById('timelapse-end-btn');
+  if (timelapseEndBtn) {
+    timelapseEndBtn.addEventListener('click', () => navigateToYear('last'));
+  }
+  
+  const timelapseJumpBtn = document.getElementById('timelapse-jump-btn');
+  if (timelapseJumpBtn) {
+    timelapseJumpBtn.addEventListener('click', () => {
+      const selectedYear = document.getElementById('timelapse-jump-year').value;
+      if (selectedYear) {
+        navigateToYear(parseInt(selectedYear));
+      }
     });
   }
   
-  const pauseTimelapseBtn = document.getElementById('pause-timelapse-btn');
-  if (pauseTimelapseBtn) {
-    pauseTimelapseBtn.addEventListener('click', function() {
-      pauseTimelapse();
-    });
+  const timelapseExitBtn = document.getElementById('timelapse-exit-btn');
+  if (timelapseExitBtn) {
+    timelapseExitBtn.addEventListener('click', () => exitTimelapse());
   }
   
-  const stopTimelapseBtn = document.getElementById('stop-timelapse-btn');
-  if (stopTimelapseBtn) {
-    stopTimelapseBtn.addEventListener('click', function() {
-      stopTimelapse();
-    });
+  const timelapseAutoPlayBtn = document.getElementById('timelapse-auto-play-btn');
+  if (timelapseAutoPlayBtn) {
+    timelapseAutoPlayBtn.addEventListener('click', () => startAutoPlay());
   }
   
   // Immersive view buttons
@@ -1454,7 +1482,7 @@ if (typeof window !== 'undefined') {
   window.analyzeEarthEngineData = analyzeEarthEngineData;
 }
 
-// Bulk loading with progress tracking
+// Enhanced bulk loading with all data types
 function startBulkLoading() {
   const startYear = parseInt(document.getElementById('start-year').value);
   const endYear = parseInt(document.getElementById('end-year').value);
@@ -1472,60 +1500,129 @@ function startBulkLoading() {
   loadingSection.classList.remove('hidden');
   document.getElementById('load-all-data-btn').disabled = true;
 
-  // Create EventSource for Server-Sent Events
-  const eventSource = new EventSource(`/ee-bulk-load?startYear=${startYear}&endYear=${endYear}`);
-
-  eventSource.onmessage = function(event) {
-    const data = JSON.parse(event.data);
+  // Enhanced loading with multiple data types
+  const dataTypes = ['temperature', 'weather', 'anomaly', 'terrain'];
+  const years = [];
+  for (let year = startYear; year <= endYear; year++) {
+    years.push(year);
+  }
+  
+  const totalOperations = years.length * dataTypes.length;
+  let completedOperations = 0;
+  let currentYear = startYear;
+  let currentDataTypeIndex = 0;
+  
+  console.log(`🚀 Starting enhanced bulk loading: ${years.length} years × ${dataTypes.length} data types = ${totalOperations} operations`);
+  
+  // Update progress display
+  function updateProgress(year, dataType, success = true) {
+    completedOperations++;
+    const progress = Math.round((completedOperations / totalOperations) * 100);
     
-    // Update progress bar
-    progressFill.style.width = `${data.progress}%`;
-    progressPercentage.textContent = `${data.progress}%`;
-    progressStatus.textContent = data.status;
+    progressFill.style.width = `${progress}%`;
+    progressPercentage.textContent = `${progress}%`;
+    progressStatus.textContent = `${success ? '✅' : '❌'} ${year} ${dataType} (${completedOperations}/${totalOperations})`;
     
-    // Store cached data with complete structure
-    if (data.mapid && !data.cached) {
-      timelapseData[data.year] = {
-        mapid: data.mapid,
-        token: data.token || '',
-        year: data.year,
-        dataType: 'temperature',
-        urlFormat: data.urlFormat
-      };
-      console.log(`Cached data for year ${data.year}:`, timelapseData[data.year]);
+    console.log(`📊 Progress: ${progress}% - ${year} ${dataType} ${success ? 'completed' : 'failed'}`);
+  }
+  
+  // Load single data type for a year
+  async function loadDataType(year, dataType) {
+    const endpoints = {
+      temperature: `/ee-temp-layer?year=${year}`,
+      weather: `/ee-weather-layer?year=${year}`,
+      anomaly: `/ee-anomaly-layer?year=${year}`,
+      terrain: `/ee-terrain-layer?year=${year}`
+    };
+    
+    try {
+      console.log(`🔄 Loading ${dataType} for year ${year}...`);
+      const response = await fetch(endpoints[dataType]);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Store in appropriate cache
+        cachedVisualizationData[dataType][year] = data;
+        
+        // Also store in timelapseData for backward compatibility (temperature only)
+        if (dataType === 'temperature') {
+          timelapseData[year] = {
+            mapid: data.mapid,
+            token: data.token || '',
+            year: year,
+            dataType: 'temperature',
+            urlFormat: data.urlFormat
+          };
+        }
+        
+        updateProgress(year, dataType, true);
+        return true;
+      } else {
+        throw new Error(data.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error(`❌ Failed to load ${dataType} for year ${year}:`, error.message);
+      updateProgress(year, dataType, false);
+      return false;
+    }
+  }
+  
+  // Sequential loading to avoid overwhelming the server
+  async function loadAllData() {
+    for (const year of years) {
+      for (const dataType of dataTypes) {
+        await loadDataType(year, dataType);
+        
+        // Small delay to prevent server overload
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
     
-    // Handle completion
-    if (data.completed) {
-      eventSource.close();
-      document.getElementById('load-all-data-btn').disabled = false;
-      document.getElementById('timelapse-controls').classList.remove('hidden');
-      
-      // Update slider range
-      document.getElementById('year-slider').min = startYear;
-      document.getElementById('year-slider').max = endYear;
-      
-      progressStatus.textContent = `Complete! Loaded ${data.totalYears} years`;
-      console.log('All data cached:', Object.keys(timelapseData).length, 'years');
-      
-      setTimeout(() => {
-        loadingSection.classList.add('hidden');
-      }, 2000);
-    }
-    
-    // Handle errors
-    if (data.error) {
-      console.error('Loading error:', data.error);
-      progressStatus.textContent = `Error: ${data.error}`;
-    }
-  };
-
-  eventSource.onerror = function(error) {
-    console.error('EventSource error:', error);
-    eventSource.close();
+    // Completion
     document.getElementById('load-all-data-btn').disabled = false;
-    progressStatus.textContent = 'Connection error';
-  };
+    
+    // Update slider range
+    document.getElementById('year-slider').min = startYear;
+    document.getElementById('year-slider').max = endYear;
+    
+    const successfulYears = Object.keys(timelapseData).length;
+    progressStatus.textContent = `🎉 Complete! Loaded ${successfulYears} years with all data types`;
+    
+    const cacheStats = {
+      temperature: Object.keys(cachedVisualizationData.temperature).length,
+      weather: Object.keys(cachedVisualizationData.weather).length,
+      anomaly: Object.keys(cachedVisualizationData.anomaly).length,
+      terrain: Object.keys(cachedVisualizationData.terrain).length,
+      timelapseCompatible: Object.keys(timelapseData).length
+    };
+    
+    console.log('📊 All data cached:', cacheStats);
+    
+    // Update cache status display
+    updateCacheStatusDisplay();
+    
+    // Initialize the new user-controlled time-lapse system
+    setTimeout(() => {
+      loadingSection.classList.add('hidden');
+      
+      // Initialize time-lapse with cached data
+      if (initializeTimelapse()) {
+        showStatusMessage('🎬 Time-lapse ready! All visualization modes cached and available.');
+      }
+    }, 2000);
+  }
+  
+  // Start the loading process
+  loadAllData().catch(error => {
+    console.error('Bulk loading failed:', error);
+    document.getElementById('load-all-data-btn').disabled = false;
+    progressStatus.textContent = `❌ Loading failed: ${error.message}`;
+  });
 }
 
 // Display cached year data with proper tile loading detection
@@ -1654,86 +1751,242 @@ function displayCachedYear(year) {
   });
 }
 
-// Simplified time-lapse with better logging
-async function startTimelapse() {
-  console.log(`🎬 [TIMELAPSE] Starting time-lapse...`);
+// User-controlled time-lapse navigation system
+function initializeTimelapse() {
+  console.log('🎬 [TIMELAPSE] Initializing user-controlled time-lapse...');
   
   if (Object.keys(timelapseData).length === 0) {
-    console.error(`❌ [TIMELAPSE] No cached data available`);
+    console.error('❌ [TIMELAPSE] No cached data available');
     alert('Please load data first using "Load All Historical Data" button');
-    return;
+    return false;
   }
   
-  const speed = parseInt(document.getElementById('timelapse-speed').value);
-  const years = Object.keys(timelapseData).map(Number).sort((a, b) => a - b);
+  // Get sorted years from cached data
+  timelapseYears = Object.keys(timelapseData).map(Number).sort((a, b) => a - b);
   
-  console.log(`📊 [TIMELAPSE] Available years:`, years);
-  console.log(`⚡ [TIMELAPSE] Speed setting: ${speed}ms delay between years`);
-  
-  if (years.length === 0) {
-    console.error(`❌ [TIMELAPSE] No valid years found in cached data`);
+  if (timelapseYears.length === 0) {
+    console.error('❌ [TIMELAPSE] No valid years found in cached data');
     alert('No cached data available for time-lapse');
+    return false;
+  }
+  
+  // Initialize at first year
+  currentYearIndex = 0;
+  currentTimelapseYear = timelapseYears[0];
+  isTimelapseActive = true;
+  
+  // Populate year dropdown
+  populateYearDropdown();
+  
+  // Show time-lapse controls
+  document.getElementById('timelapse-controls').classList.remove('hidden');
+  
+  // Update UI
+  updateTimelapseUI();
+  
+  // Load first year
+  displayCachedYear(currentTimelapseYear);
+  
+  console.log(`✅ [TIMELAPSE] Initialized with ${timelapseYears.length} years (${timelapseYears[0]}-${timelapseYears[timelapseYears.length-1]})`);
+  return true;
+}
+
+function populateYearDropdown() {
+  const dropdown = document.getElementById('timelapse-jump-year');
+  if (!dropdown) return;
+  
+  // Clear existing options except the first one
+  dropdown.innerHTML = '<option value="">Select Year...</option>';
+  
+  // Add all available years
+  timelapseYears.forEach(year => {
+    const option = document.createElement('option');
+    option.value = year;
+    option.textContent = year;
+    dropdown.appendChild(option);
+  });
+}
+
+function updateTimelapseUI() {
+  // Update year display
+  const yearDisplay = document.getElementById('timelapse-current-year');
+  if (yearDisplay) {
+    yearDisplay.textContent = currentTimelapseYear;
+  }
+  
+  // Update progress
+  const yearIndex = document.getElementById('timelapse-year-index');
+  const totalYears = document.getElementById('timelapse-total-years');
+  if (yearIndex && totalYears) {
+    yearIndex.textContent = currentYearIndex + 1;
+    totalYears.textContent = timelapseYears.length;
+  }
+  
+  // Update button states
+  const startBtn = document.getElementById('timelapse-start-btn');
+  const prevBtn = document.getElementById('timelapse-prev-btn');
+  const nextBtn = document.getElementById('timelapse-next-btn');
+  const endBtn = document.getElementById('timelapse-end-btn');
+  
+  if (startBtn) startBtn.disabled = currentYearIndex === 0;
+  if (prevBtn) prevBtn.disabled = currentYearIndex === 0;
+  if (nextBtn) nextBtn.disabled = currentYearIndex === timelapseYears.length - 1;
+  if (endBtn) endBtn.disabled = currentYearIndex === timelapseYears.length - 1;
+}
+
+function navigateToYear(direction) {
+  if (!isTimelapseActive || timelapseYears.length === 0) {
+    console.warn('Time-lapse not active or no data available');
     return;
   }
   
-  isTimelapseRunning = true;
+  let newIndex = currentYearIndex;
   
-  // Update UI
-  document.getElementById('play-timelapse-btn').classList.add('hidden');
-  document.getElementById('pause-timelapse-btn').classList.remove('hidden');
-  
-  console.log(`🚀 [TIMELAPSE] Starting time-lapse with ${years.length} years`);
-  
-  // Process each year sequentially
-  for (let i = 0; i < years.length && isTimelapseRunning; i++) {
-    const year = years[i];
-    currentTimelapseYear = year;
-    
-    console.log(`\n🎯 [TIMELAPSE] === YEAR ${year} (${i + 1}/${years.length}) ===`);
-    
-    try {
-      const startTime = performance.now();
-      
-      // Wait for tiles to load completely
-      await displayCachedYear(year);
-      
-      const loadTime = (performance.now() - startTime).toFixed(0);
-      console.log(`✅ [TIMELAPSE] Year ${year} completed in ${loadTime}ms`);
-      
-      // Wait additional delay before next year
-      if (isTimelapseRunning && i < years.length - 1) {
-        console.log(`⏳ [TIMELAPSE] Waiting ${speed}ms before next year...`);
-        await new Promise(resolve => setTimeout(resolve, speed));
+  switch(direction) {
+    case 'first':
+      newIndex = 0;
+      break;
+    case 'prev':
+      newIndex = Math.max(0, currentYearIndex - 1);
+      break;
+    case 'next':
+      newIndex = Math.min(timelapseYears.length - 1, currentYearIndex + 1);
+      break;
+    case 'last':
+      newIndex = timelapseYears.length - 1;
+      break;
+    default:
+      // Direct year navigation
+      if (typeof direction === 'number') {
+        const yearIndex = timelapseYears.indexOf(direction);
+        if (yearIndex !== -1) {
+          newIndex = yearIndex;
+        } else {
+          console.warn(`Year ${direction} not found in cached data`);
+          return;
+        }
       }
-      
-    } catch (error) {
-      console.error(`❌ [TIMELAPSE] Error with year ${year}:`, error);
+  }
+  
+  if (newIndex !== currentYearIndex) {
+    currentYearIndex = newIndex;
+    currentTimelapseYear = timelapseYears[currentYearIndex];
+    
+    console.log(`🎯 [TIMELAPSE] Navigating to year ${currentTimelapseYear} (${currentYearIndex + 1}/${timelapseYears.length})`);
+    
+    // Update UI
+    updateTimelapseUI();
+    
+    // Load the year data
+    displayCachedYear(currentTimelapseYear);
+    
+    // Show status message
+    showStatusMessage(`📅 Year ${currentTimelapseYear} (${currentYearIndex + 1}/${timelapseYears.length})`);
+  }
+}
+
+function exitTimelapse() {
+  console.log('❌ [TIMELAPSE] Exiting time-lapse mode');
+  
+  isTimelapseActive = false;
+  
+  // Hide time-lapse controls
+  document.getElementById('timelapse-controls').classList.add('hidden');
+  
+  // Return to normal year slider
+  const yearSlider = document.getElementById('year-slider');
+  const selectedYearDisplay = document.getElementById('selected-year');
+  
+  if (yearSlider && selectedYearDisplay) {
+    yearSlider.value = currentTimelapseYear;
+    selectedYearDisplay.textContent = currentTimelapseYear;
+    selectedYear = currentTimelapseYear;
+  }
+  
+  showStatusMessage('🏠 Returned to normal mode');
+}
+
+// Auto-play functionality (optional)
+let autoPlayInterval = null;
+
+function startAutoPlay() {
+  if (autoPlayInterval) {
+    stopAutoPlay();
+    return;
+  }
+  
+  const autoPlayBtn = document.getElementById('timelapse-auto-play-btn');
+  if (autoPlayBtn) {
+    autoPlayBtn.textContent = '⏸️ Stop Auto';
+  }
+  
+  autoPlayInterval = setInterval(() => {
+    if (currentYearIndex < timelapseYears.length - 1) {
+      navigateToYear('next');
+    } else {
+      // Reached the end, stop auto-play
+      stopAutoPlay();
     }
-  }
+  }, 2000); // 2 seconds per year
   
-  if (isTimelapseRunning) {
-    console.log(`🎉 [TIMELAPSE] Time-lapse completed!`);
-    stopTimelapse();
-  }
+  showStatusMessage('▶️ Auto-play started');
 }
 
-function pauseTimelapse() {
-  console.log(`⏸️ [TIMELAPSE] Pausing time-lapse at year ${currentTimelapseYear}`);
-  isTimelapseRunning = false;
+function stopAutoPlay() {
+  if (autoPlayInterval) {
+    clearInterval(autoPlayInterval);
+    autoPlayInterval = null;
+  }
   
-  // Update UI
-  document.getElementById('play-timelapse-btn').classList.remove('hidden');
-  document.getElementById('pause-timelapse-btn').classList.add('hidden');
+  const autoPlayBtn = document.getElementById('timelapse-auto-play-btn');
+  if (autoPlayBtn) {
+    autoPlayBtn.textContent = '🎬 Auto Play';
+  }
+  
+  showStatusMessage('⏸️ Auto-play stopped');
 }
 
-function stopTimelapse() {
-  console.log(`⏹️ [TIMELAPSE] Stopping time-lapse`);
-  isTimelapseRunning = false;
+// Quick range selection functions
+function setQuickRange(startYear, endYear) {
+  document.getElementById('start-year').value = startYear;
+  document.getElementById('end-year').value = endYear;
   
-  // Update UI
-  document.getElementById('play-timelapse-btn').classList.remove('hidden');
-  document.getElementById('pause-timelapse-btn').classList.add('hidden');
+  showStatusMessage(`📅 Range set to ${startYear}-${endYear} (${endYear - startYear + 1} years)`);
 }
+
+// Update cache status display
+function updateCacheStatusDisplay() {
+  const cacheStatus = document.getElementById('cache-status');
+  if (!cacheStatus) return;
+  
+  // Show the cache status panel
+  cacheStatus.classList.remove('hidden');
+  
+  // Update individual counts
+  document.getElementById('cache-temp-count').textContent = Object.keys(cachedVisualizationData.temperature).length;
+  document.getElementById('cache-weather-count').textContent = Object.keys(cachedVisualizationData.weather).length;
+  document.getElementById('cache-anomaly-count').textContent = Object.keys(cachedVisualizationData.anomaly).length;
+  document.getElementById('cache-terrain-count').textContent = Object.keys(cachedVisualizationData.terrain).length;
+  
+  // Calculate total operations
+  const totalOperations = Object.keys(cachedVisualizationData.temperature).length +
+                          Object.keys(cachedVisualizationData.weather).length +
+                          Object.keys(cachedVisualizationData.anomaly).length +
+                          Object.keys(cachedVisualizationData.terrain).length;
+  
+  document.getElementById('cache-total-operations').textContent = totalOperations;
+  
+  console.log('📊 Cache status updated:', {
+    temperature: Object.keys(cachedVisualizationData.temperature).length,
+    weather: Object.keys(cachedVisualizationData.weather).length,
+    anomaly: Object.keys(cachedVisualizationData.anomaly).length,
+    terrain: Object.keys(cachedVisualizationData.terrain).length,
+    total: totalOperations
+  });
+}
+
+// Make functions globally available
+window.setQuickRange = setQuickRange;
 
 // Debug function to check cached data
 window.debugTimelapseCache = function() {
@@ -2338,7 +2591,7 @@ function addEnhancedLegend(mode, year) {
   document.getElementById('map').appendChild(legend);
 }
 
-// Main visualization loader
+// Enhanced visualization loader with caching support
 function loadVisualization(year) {
   // If visualization controls aren't ready yet, fall back to temperature
   if (!currentVisualizationMode || currentVisualizationMode === 'temperature') {
@@ -2349,6 +2602,14 @@ function loadVisualization(year) {
   
   if (isLoading) {
     console.log("Already loading, request ignored");
+    return;
+  }
+  
+  // Check if data is cached first
+  const cachedData = cachedVisualizationData[currentVisualizationMode]?.[year];
+  if (cachedData) {
+    console.log(`🚀 Using cached ${currentVisualizationMode} data for year ${year}`);
+    loadVisualizationFromCache(cachedData, year);
     return;
   }
   
@@ -2389,7 +2650,7 @@ function loadVisualization(year) {
       endpoint = `/ee-temp-layer?year=${year}`;
   }
   
-  console.log(`Loading ${currentVisualizationMode} visualization for year ${year}...`);
+  console.log(`🔄 Loading ${currentVisualizationMode} visualization for year ${year} from server...`);
   
   fetch(endpoint)
     .then(response => {
@@ -2405,19 +2666,14 @@ function loadVisualization(year) {
       console.log(`${currentVisualizationMode} response:`, data);
       
       if (data.success) {
-        if (currentVisualizationMode === 'weather') {
-          // Handle combined weather data
-          loadTemperatureFromData(data.temperature, year);
-          if (data.wind) {
-            loadWindLayer(data.wind);
-          }
-        } else {
-          // Handle single layer data
-          loadTemperatureFromData(data, year);
+        // Cache the data for future use
+        if (!cachedVisualizationData[currentVisualizationMode]) {
+          cachedVisualizationData[currentVisualizationMode] = {};
         }
+        cachedVisualizationData[currentVisualizationMode][year] = data;
         
-        // Add appropriate legend
-        addVisualizationLegend(currentVisualizationMode, year);
+        // Load the visualization
+        loadVisualizationFromCache(data, year);
       } else {
         throw new Error(data.error || 'Failed to load visualization');
       }
@@ -2443,6 +2699,44 @@ function loadVisualization(year) {
     .finally(() => {
       isLoading = false;
     });
+}
+
+// Load visualization from cached data
+function loadVisualizationFromCache(data, year) {
+  console.log(`📊 Loading ${currentVisualizationMode} from cache for year ${year}`);
+  
+  // Clear existing overlays
+  if (currentOverlay) {
+    map.overlayMapTypes.clear();
+    currentOverlay = null;
+  }
+  
+  // Clear wind layer if exists
+  if (windLayer) {
+    if (windLayer.remove) {
+      windLayer.remove();
+    } else if (windLayer.parentNode) {
+      windLayer.parentNode.removeChild(windLayer);
+    }
+    windLayer = null;
+  }
+  
+  if (currentVisualizationMode === 'weather') {
+    // Handle combined weather data
+    loadTemperatureFromData(data.temperature, year);
+    if (data.wind) {
+      loadWindLayer(data.wind);
+    }
+  } else {
+    // Handle single layer data
+    loadTemperatureFromData(data, year);
+  }
+  
+  // Add appropriate legend
+  addVisualizationLegend(currentVisualizationMode, year);
+  
+  // Show cache status
+  showStatusMessage(`⚡ Loaded ${currentVisualizationMode} ${year} from cache`);
 }
 
 // Load temperature layer from data object
@@ -2520,43 +2814,122 @@ function loadTemperatureFromData(data, year) {
   }
 }
 
-// Load wind layer using webgl-wind library
+// Enhanced wind layer loading with tile support
 function loadWindLayer(windData) {
-  console.log('Wind data received:', windData);
+  console.log('🌬️ Wind data received:', windData);
   
-  // Remove existing wind canvas if it exists
+  // Remove existing wind layer if it exists
   if (windLayer) {
-    if (windLayer.remove) {
+    if (windLayer.setMap) {
+      windLayer.setMap(null);
+    } else if (windLayer.remove) {
       windLayer.remove();
     } else if (windLayer.parentNode) {
       windLayer.parentNode.removeChild(windLayer);
     }
+    windLayer = null;
   }
   
-  // Create wind canvas overlay
-  const windCanvas = document.createElement('canvas');
-  windCanvas.id = 'wind-canvas';
-  windCanvas.style.cssText = `
+  // Handle different wind data types
+  if (windData.type === 'tiles' && windData.mapid) {
+    console.log('🗺️ Loading wind as tile overlay...');
+    
+    // Create tile URL function for wind speed
+    let getTileUrlFunction;
+    
+    if (windData.urlFormat) {
+      getTileUrlFunction = function(tile, zoom) {
+        const url = windData.urlFormat
+          .replace('{z}', zoom)
+          .replace('{x}', tile.x)
+          .replace('{y}', tile.y);
+        console.log(`Wind tile URL: ${url}`);
+        return url;
+      };
+    } else {
+      getTileUrlFunction = function(tile, zoom) {
+        const baseUrl = `https://earthengine.googleapis.com/map/${windData.mapid}/${zoom}/${tile.x}/${tile.y}`;
+        const token = windData.token ? `?token=${windData.token}` : '';
+        const cacheBuster = `${token ? '&' : '?'}cb=${Date.now()}&type=wind`;
+        const url = `${baseUrl}${token}${cacheBuster}`;
+        console.log(`Wind tile URL: ${url}`);
+        return url;
+      };
+    }
+    
+    // Create the wind tile overlay
+    const windTileSource = new google.maps.ImageMapType({
+      name: 'Wind Speed',
+      getTileUrl: getTileUrlFunction,
+      tileSize: new google.maps.Size(256, 256),
+      minZoom: 1,
+      maxZoom: 20,
+      opacity: 0.6  // Semi-transparent to show temperature underneath
+    });
+    
+    // Add wind overlay to map
+    console.log('🌬️ Adding wind speed overlay to map');
+    map.overlayMapTypes.insertAt(1, windTileSource);  // Layer 1 (above temperature)
+    windLayer = windTileSource;
+    
+    // Add wind legend
+    addWindLegend(windData.legend);
+    
+    showStatusMessage('🌬️ Wind speed overlay loaded');
+    
+  } else if (windData.type === 'fallback') {
+    console.log('⚠️ Wind visualization fallback:', windData.message);
+    showStatusMessage(`⚠️ ${windData.message}`);
+    
+  } else {
+    console.log('🔄 Loading wind as particle system (legacy)...');
+    loadWindParticles(windData);
+  }
+}
+
+// Add wind legend
+function addWindLegend(legendData) {
+  if (!legendData) return;
+  
+  // Remove existing wind legend
+  const existingLegend = document.getElementById('wind-legend');
+  if (existingLegend) {
+    existingLegend.remove();
+  }
+  
+  const legend = document.createElement('div');
+  legend.id = 'wind-legend';
+  legend.style.cssText = `
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 100;
-    background: transparent;
+    bottom: 80px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 1000;
   `;
   
-  document.getElementById('map').appendChild(windCanvas);
+  legend.innerHTML = `
+    <div><strong>${legendData.title}</strong></div>
+    <div style="margin-top: 5px;">
+      <div style="background: linear-gradient(to right, #ffffff, #002040); height: 20px; width: 150px;"></div>
+      <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+        <span>${legendData.min} ${legendData.unit}</span>
+        <span>${legendData.max} ${legendData.unit}</span>
+      </div>
+    </div>
+    <div style="margin-top: 5px; font-size: 10px;">White = Calm, Blue = Strong</div>
+  `;
   
-  // Set canvas dimensions to match the map container
-  const mapContainer = document.getElementById('map');
-  windCanvas.width = mapContainer.clientWidth;
-  windCanvas.height = mapContainer.clientHeight;
-  
-  // Prepare wind data for the webgl-wind library
-  const width = windData.width;
-  const height = windData.height;
+  document.getElementById('map').appendChild(legend);
+}
+
+// Legacy wind particle system (fallback)
+function loadWindParticles(windData) {
+  const width = windData.width || 10;
+  const height = windData.height || 10;
   
   // Create Float32Arrays for the U and V components
   const uData = new Float32Array(windData.uData);

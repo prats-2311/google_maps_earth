@@ -43,30 +43,75 @@
                                 <span id="progress-status">Preparing...</span>
                             </div>
                         </div>
+                        
+                        <!-- Cache Status Display -->
+                        <div id="cache-status" class="cache-status hidden">
+                            <h4>📊 Cached Data Status</h4>
+                            <div class="cache-grid">
+                                <div class="cache-item">
+                                    <span class="cache-label">🌡️ Temperature:</span>
+                                    <span id="cache-temp-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">🌦️ Weather:</span>
+                                    <span id="cache-weather-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">📈 Anomaly:</span>
+                                    <span id="cache-anomaly-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">🏔️ Terrain:</span>
+                                    <span id="cache-terrain-count">0</span> years
+                                </div>
+                            </div>
+                            <div class="cache-total">
+                                Total: <span id="cache-total-operations">0</span> datasets cached
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Year Range Selection -->
                     <div class="year-range-controls">
                         <label for="start-year">Start Year:</label>
-                        <input type="number" id="start-year" min="1979" max="2020" value="1990">
+                        <input type="number" id="start-year" min="1979" max="2020" value="1979">
                         
                         <label for="end-year">End Year:</label>
-                        <input type="number" id="end-year" min="1979" max="2020" value="2000">
+                        <input type="number" id="end-year" min="1979" max="2020" value="2020">
                     </div>
                     
-                    <!-- Time-lapse Controls -->
+                    <div class="quick-range-buttons">
+                        <button onclick="setQuickRange(1979, 2020)" class="quick-range-btn">Full Range (42 years)</button>
+                        <button onclick="setQuickRange(1990, 2000)" class="quick-range-btn">Test Range (11 years)</button>
+                        <button onclick="setQuickRange(2010, 2020)" class="quick-range-btn">Recent Decade</button>
+                    </div>
+                    
+                    <!-- User-Controlled Time-lapse Navigation -->
                     <div id="timelapse-controls" class="hidden">
-                        <button id="play-timelapse-btn">▶ Play Time-lapse</button>
-                        <button id="pause-timelapse-btn" class="hidden">⏸ Pause</button>
-                        <button id="stop-timelapse-btn">⏹ Stop</button>
+                        <div class="timelapse-header">
+                            <h4>🎬 Time-lapse Navigator</h4>
+                            <div id="timelapse-year-display">Year: <span id="timelapse-current-year">1979</span></div>
+                            <div id="timelapse-progress">Year <span id="timelapse-year-index">1</span> of <span id="timelapse-total-years">42</span></div>
+                        </div>
                         
-                        <div class="timelapse-settings">
-                            <label for="timelapse-speed">Speed:</label>
-                            <select id="timelapse-speed">
-                                <option value="500">Fast (0.5s/year)</option>
-                                <option value="1000" selected>Normal (1s/year)</option>
-                                <option value="2000">Slow (2s/year)</option>
+                        <div class="timelapse-navigation">
+                            <button id="timelapse-start-btn" title="Go to first year">⏮️ First</button>
+                            <button id="timelapse-prev-btn" title="Previous year">⏪ Previous</button>
+                            <button id="timelapse-next-btn" title="Next year">⏩ Next</button>
+                            <button id="timelapse-end-btn" title="Go to last year">⏭️ Last</button>
+                        </div>
+                        
+                        <div class="timelapse-quick-jump">
+                            <label for="timelapse-jump-year">Quick Jump:</label>
+                            <select id="timelapse-jump-year">
+                                <option value="">Select Year...</option>
                             </select>
+                            <button id="timelapse-jump-btn">Go</button>
+                        </div>
+                        
+                        <div class="timelapse-actions">
+                            <button id="timelapse-exit-btn">❌ Exit Time-lapse</button>
+                            <button id="timelapse-auto-play-btn">🎬 Auto Play</button>
                         </div>
                     </div>
                     

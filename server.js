@@ -217,14 +217,26 @@ app.get('/ee-timelapse-layer', (req, res) => {
       const clippedTemp = tempWithId.clip(uttarPradeshROI.geometry());
       
       // Define visualization parameters based on Earth Engine documentation
-      // Temperature range for India: typically 15-45°C
+      // Enhanced temperature range for better precision (0.5°C variance)
+      // Uttar Pradesh temperature range: typically 10-50°C with seasonal variation
       const visParams = {
-        min: 15,
-        max: 45,
+        min: 10,    // Winter minimum
+        max: 50,    // Summer maximum  
         palette: [
-          '000080', '0000d9', '4000ff', '8000ff', '0080ff', '00ffff', 
-          '00ff80', '80ff00', 'daff00', 'ffff00', 'fff500', 'ffda00', 
-          'ffb000', 'ffa400', 'ff4f00', 'ff2500', 'ff0a00', 'ff00ff'
+          // Cold (10-20°C) - Blues and purples
+          '000080', '0040ff', '0080ff', '00c0ff', '80e0ff',
+          // Cool (20-25°C) - Light blues to cyan
+          '00ffff', '80ffff', 'c0ffff',
+          // Mild (25-30°C) - Greens
+          '00ff80', '40ff40', '80ff00', 'c0ff00',
+          // Warm (30-35°C) - Yellows
+          'ffff00', 'ffd000', 'ffa000',
+          // Hot (35-40°C) - Oranges
+          'ff8000', 'ff6000', 'ff4000',
+          // Very Hot (40-45°C) - Reds
+          'ff2000', 'ff0000', 'e00000',
+          // Extreme (45-50°C) - Dark reds
+          'c00000', 'a00000', '800000'
         ]
       };
       
@@ -884,11 +896,26 @@ app.get('/ee-weather-layer', async (req, res) => {
     const clippedWindU = windU.clip(uttarPradeshROI);
     const clippedWindV = windV.clip(uttarPradeshROI);
     
-    // Temperature visualization
+    // Enhanced temperature visualization for weather mode
     const tempVisParams = {
-      min: 25,
-      max: 30,
-      palette: ['blue', 'cyan', 'green', 'yellow', 'orange', 'red']
+      min: 10,    // Winter minimum
+      max: 50,    // Summer maximum
+      palette: [
+        // Cold (10-20°C) - Blues and purples
+        '000080', '0040ff', '0080ff', '00c0ff', '80e0ff',
+        // Cool (20-25°C) - Light blues to cyan
+        '00ffff', '80ffff', 'c0ffff',
+        // Mild (25-30°C) - Greens
+        '00ff80', '40ff40', '80ff00', 'c0ff00',
+        // Warm (30-35°C) - Yellows
+        'ffff00', 'ffd000', 'ffa000',
+        // Hot (35-40°C) - Oranges
+        'ff8000', 'ff6000', 'ff4000',
+        // Very Hot (40-45°C) - Reds
+        'ff2000', 'ff0000', 'e00000',
+        // Extreme (45-50°C) - Dark reds
+        'c00000', 'a00000', '800000'
+      ]
     };
     
     // Get temperature map tiles
@@ -899,31 +926,54 @@ app.get('/ee-weather-layer', async (req, res) => {
       });
     });
     
-    // Get wind data as arrays
+    // Enhanced wind visualization using wind speed magnitude
     const windDataPromise = new Promise((resolve, reject) => {
-      const windImage = clippedWindU.addBands(clippedWindV);
+      // Calculate wind speed magnitude: sqrt(u² + v²)
+      const windSpeed = windU.pow(2).add(windV.pow(2)).sqrt();
+      const clippedWindSpeed = windSpeed.clip(uttarPradeshROI);
       
-      windImage.reduceRegion({
-        reducer: ee.Reducer.toList(),
-        geometry: uttarPradeshROI.geometry(),
-        scale: 25000, // 25km resolution
-        maxPixels: 1e9
-      }).evaluate((result, error) => {
+      // Wind speed visualization parameters
+      const windVisParams = {
+        min: 0,     // Calm
+        max: 15,    // Strong wind (m/s)
+        palette: [
+          'ffffff',   // 0 m/s - White (calm)
+          'e0f0ff',   // 1-2 m/s - Very light blue
+          'c0e0ff',   // 2-4 m/s - Light blue  
+          '80d0ff',   // 4-6 m/s - Blue
+          '40a0ff',   // 6-8 m/s - Medium blue
+          '0080ff',   // 8-10 m/s - Strong blue
+          '0060c0',   // 10-12 m/s - Dark blue
+          '004080',   // 12-15 m/s - Very dark blue
+          '002040'    // 15+ m/s - Navy
+        ]
+      };
+      
+      // Generate wind speed map
+      clippedWindSpeed.getMap(windVisParams, (result, error) => {
         if (error) {
-          reject(error);
-        } else {
-          const uData = result['u_component_of_wind_10m'] || [];
-          const vData = result['v_component_of_wind_10m'] || [];
-          
+          console.error('Wind map generation error:', error);
+          // Provide fallback wind data
           resolve({
-            width: Math.ceil(Math.sqrt(uData.length)),
-            height: Math.ceil(Math.sqrt(uData.length)),
-            uData: uData,
-            vData: vData,
-            uMin: Math.min(...uData),
-            uMax: Math.max(...uData),
-            vMin: Math.min(...vData),
-            vMax: Math.max(...vData)
+            type: 'fallback',
+            message: 'Wind visualization temporarily unavailable',
+            mapid: null,
+            token: null
+          });
+        } else {
+          console.log('Wind speed map generated successfully');
+          resolve({
+            type: 'tiles',
+            mapid: result.mapid,
+            token: result.token || '',
+            urlFormat: result.urlFormat,
+            description: 'Wind speed magnitude (m/s)',
+            legend: {
+              min: 0,
+              max: 15,
+              unit: 'm/s',
+              title: 'Wind Speed'
+            }
           });
         }
       });
@@ -958,7 +1008,7 @@ app.get('/ee-weather-layer', async (req, res) => {
   }
 });
 
-// Anomaly detection endpoint
+// Simplified anomaly detection endpoint
 app.get('/ee-anomaly-layer', async (req, res) => {
   try {
     const year = parseInt(req.query.year);
@@ -973,10 +1023,11 @@ app.get('/ee-anomaly-layer', async (req, res) => {
     const cacheKey = `anomaly_${year}`;
     
     if (tileCache[cacheKey]) {
+      console.log(`Returning cached anomaly data for year ${year}`);
       return res.json(tileCache[cacheKey]);
     }
 
-    console.log(`Calculating temperature anomaly for year ${year}...`);
+    console.log(`🌡️ Calculating temperature anomaly for year ${year}...`);
     
     // Check if Earth Engine is initialized
     if (!ee.data.getAuthToken()) {
@@ -986,6 +1037,17 @@ app.get('/ee-anomaly-layer', async (req, res) => {
         error: 'Earth Engine not authenticated. Please restart the server.' 
       });
     }
+
+    // Use a simpler approach - compare with 1980-2000 baseline
+    console.log('📊 Loading baseline temperature data (1980-2000)...');
+    
+    // Baseline period (20 years for stability)
+    const baselineStart = '1980-01-01';
+    const baselineEnd = '2000-12-31';
+    
+    // Current year
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
     
     // Calculate baseline (1980-2000 average) - 20 year period for stability
     console.log('Loading baseline period (1980-2000)...');
@@ -1070,14 +1132,26 @@ app.get('/ee-anomaly-layer', async (req, res) => {
           }
         });
         
-        // Diverging color palette for anomalies (blue = cooler, red = warmer)
-        // Adjusted range to capture realistic anomaly variations (typically ±2°C)
+        // Enhanced diverging color palette for anomalies (0.5°C precision)
+        // Improved range to capture subtle temperature variations
         const anomalyVisParams = {
-          min: -2,  // 2°C cooler than baseline
-          max: 2,   // 2°C warmer than baseline
+          min: -3,  // 3°C cooler than baseline
+          max: 3,   // 3°C warmer than baseline
           palette: [
-            '#000080', '#0040ff', '#0080ff', '#00c0ff', '#80e0ff', '#ffffff',
-            '#ffe080', '#ffc040', '#ff8000', '#ff4000', '#ff0000', '#800000'
+            // Very cold anomalies (-3 to -2°C)
+            '#000080', '#0020a0', '#0040c0',
+            // Cold anomalies (-2 to -1°C)  
+            '#0060e0', '#0080ff', '#40a0ff',
+            // Slightly cool (-1 to -0.5°C)
+            '#80c0ff', '#c0e0ff',
+            // Near normal (-0.5 to +0.5°C)
+            '#f0f8ff', '#ffffff', '#fff8f0',
+            // Slightly warm (+0.5 to +1°C)
+            '#ffe0c0', '#ffc080',
+            // Warm anomalies (+1 to +2°C)
+            '#ff8040', '#ff6000', '#ff4000',
+            // Very warm anomalies (+2 to +3°C)
+            '#e02000', '#c00000', '#800000'
           ]
         };
         
