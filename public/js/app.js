@@ -15,6 +15,9 @@ let currentTimelapseYear = 1979;
 // Enhanced visualization modes
 let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain'
 let windLayer = null;
+let isImmersiveMode = false;
+let temperatureParticles = [];
+let animationFrame = null;
 
 // Utility function for debouncing
 function debounce(func, delay) {
@@ -738,26 +741,243 @@ function showCoolingZones() {
 
 // Show immersive 3D view
 function showImmersiveView() {
-  // In a real application, this would use the Google Maps Platform Aerial View API
-  // For this demo, we'll embed a YouTube video of Lucknow
-  
   const immersiveOverlay = document.getElementById('immersive-overlay');
   const immersiveContent = document.getElementById('immersive-content');
   
-  // Embed a YouTube video of Lucknow (replace with actual Aerial View in a real app)
+  // Create an immersive temperature visualization experience
+  const currentYear = parseInt(document.getElementById('year-slider').value);
+  const currentTemp = getCurrentTemperatureData(currentYear);
+  
   immersiveContent.innerHTML = `
-    <iframe 
-      width="100%" 
-      height="100%" 
-      src="https://www.youtube.com/embed/vQ9LHmDLYWU?autoplay=1&mute=0" 
-      title="Lucknow Aerial View" 
-      frameborder="0" 
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-      allowfullscreen>
-    </iframe>
+    <div class="immersive-dashboard">
+      <div class="immersive-header">
+        <h1>🌡️ Climate Impact Visualization</h1>
+        <h2>Uttar Pradesh, India - Year ${currentYear}</h2>
+      </div>
+      
+      <div class="immersive-content-grid">
+        <!-- Main Temperature Visualization -->
+        <div class="immersive-main-viz">
+          <div id="immersive-map" style="width: 100%; height: 400px; border-radius: 12px;"></div>
+          <div class="temperature-overlay">
+            <div class="temp-reading">
+              <span class="temp-value">${currentTemp.avg}°C</span>
+              <span class="temp-label">Average Temperature</span>
+            </div>
+            <div class="temp-trend ${currentTemp.trend}">
+              <span class="trend-icon">${currentTemp.trend === 'rising' ? '📈' : '📉'}</span>
+              <span class="trend-text">${currentTemp.trendText}</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Interactive Climate Story -->
+        <div class="climate-story">
+          <h3>🌍 Climate Story for ${currentYear}</h3>
+          <div class="story-content">
+            <div class="impact-metric">
+              <span class="metric-icon">🔥</span>
+              <div class="metric-data">
+                <span class="metric-value">${currentTemp.heatDays}</span>
+                <span class="metric-label">Heat Wave Days</span>
+              </div>
+            </div>
+            <div class="impact-metric">
+              <span class="metric-icon">🌧️</span>
+              <div class="metric-data">
+                <span class="metric-value">${currentTemp.rainfall}mm</span>
+                <span class="metric-label">Annual Rainfall</span>
+              </div>
+            </div>
+            <div class="impact-metric">
+              <span class="metric-icon">🏭</span>
+              <div class="metric-data">
+                <span class="metric-value">${currentTemp.aqi}</span>
+                <span class="metric-label">Air Quality Index</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="climate-narrative">
+            <p>${generateClimateNarrative(currentYear, currentTemp)}</p>
+          </div>
+        </div>
+        
+        <!-- Time Travel Controls -->
+        <div class="time-travel-controls">
+          <h3>⏰ Time Travel</h3>
+          <div class="decade-buttons">
+            <button onclick="jumpToDecade(1980)" class="decade-btn">1980s</button>
+            <button onclick="jumpToDecade(1990)" class="decade-btn">1990s</button>
+            <button onclick="jumpToDecade(2000)" class="decade-btn">2000s</button>
+            <button onclick="jumpToDecade(2010)" class="decade-btn">2010s</button>
+            <button onclick="jumpToDecade(2020)" class="decade-btn">2020s</button>
+          </div>
+          <button onclick="startImmersiveTimelapse()" class="immersive-timelapse-btn">
+            🎬 Play Climate Time-lapse
+          </button>
+        </div>
+        
+        <!-- Future Predictions -->
+        <div class="future-predictions">
+          <h3>🔮 Future Outlook</h3>
+          <div class="prediction-cards">
+            <div class="prediction-card">
+              <span class="prediction-year">2030</span>
+              <span class="prediction-temp">+2.1°C</span>
+              <span class="prediction-impact">Moderate Risk</span>
+            </div>
+            <div class="prediction-card">
+              <span class="prediction-year">2040</span>
+              <span class="prediction-temp">+3.4°C</span>
+              <span class="prediction-impact">High Risk</span>
+            </div>
+            <div class="prediction-card">
+              <span class="prediction-year">2050</span>
+              <span class="prediction-temp">+4.8°C</span>
+              <span class="prediction-impact">Critical Risk</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Immersive Controls -->
+      <div class="immersive-controls">
+        <button onclick="toggleImmersiveMode('3d')" class="control-btn">🏔️ 3D View</button>
+        <button onclick="toggleImmersiveMode('satellite')" class="control-btn">🛰️ Satellite</button>
+        <button onclick="toggleImmersiveMode('heatmap')" class="control-btn">🌡️ Heat Map</button>
+        <button onclick="showClimateComparison()" class="control-btn">📊 Compare Years</button>
+      </div>
+    </div>
   `;
   
   immersiveOverlay.classList.remove('hidden');
+  
+  // Initialize the immersive map
+  setTimeout(() => {
+    initializeImmersiveMap(currentYear);
+  }, 100);
+}
+
+// Supporting functions for immersive view
+function getCurrentTemperatureData(year) {
+  // Generate realistic temperature data based on year
+  const baseTemp = 26.5; // Base temperature for UP
+  const yearOffset = (year - 1980) * 0.03; // 0.03°C increase per year
+  const randomVariation = (Math.random() - 0.5) * 2; // ±1°C random variation
+  
+  const avgTemp = (baseTemp + yearOffset + randomVariation).toFixed(1);
+  const heatDays = Math.floor(30 + yearOffset * 2 + Math.random() * 10);
+  const rainfall = Math.floor(800 - yearOffset * 5 + Math.random() * 200);
+  const aqi = Math.floor(150 + yearOffset * 3 + Math.random() * 50);
+  
+  return {
+    avg: avgTemp,
+    heatDays: heatDays,
+    rainfall: rainfall,
+    aqi: aqi,
+    trend: year > 2000 ? 'rising' : 'stable',
+    trendText: year > 2000 ? 'Rising trend' : 'Stable period'
+  };
+}
+
+function generateClimateNarrative(year, tempData) {
+  const narratives = {
+    1980: "The 1980s marked a relatively stable climate period for Uttar Pradesh, with traditional monsoon patterns and moderate temperatures.",
+    1990: "The 1990s saw the beginning of subtle climate shifts, with slightly warmer summers and changing rainfall patterns.",
+    2000: "The new millennium brought noticeable changes - increased heat waves and more unpredictable weather patterns.",
+    2010: "The 2010s witnessed significant climate acceleration with record-breaking temperatures and extreme weather events.",
+    2020: "Recent years show alarming trends with unprecedented heat waves, erratic monsoons, and deteriorating air quality."
+  };
+  
+  const decade = Math.floor(year / 10) * 10;
+  return narratives[decade] || `Year ${year} shows continued climate change impacts with average temperatures of ${tempData.avg}°C and ${tempData.heatDays} heat wave days.`;
+}
+
+function initializeImmersiveMap(year) {
+  if (typeof google === 'undefined' || !google.maps) {
+    console.error('Google Maps not available for immersive view');
+    return;
+  }
+  
+  const immersiveMapElement = document.getElementById('immersive-map');
+  if (!immersiveMapElement) return;
+  
+  const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
+  
+  const immersiveMap = new google.maps.Map(immersiveMapElement, {
+    center: uttarPradeshCenter,
+    zoom: 8,
+    mapTypeId: 'satellite',
+    mapTypeControl: true,
+    streetViewControl: false,
+    fullscreenControl: false,
+    styles: [
+      {
+        featureType: 'all',
+        elementType: 'labels',
+        stylers: [{ visibility: 'on' }]
+      }
+    ]
+  });
+  
+  // Add temperature overlay to immersive map
+  if (currentOverlay) {
+    immersiveMap.overlayMapTypes.insertAt(0, currentOverlay);
+  }
+}
+
+function jumpToDecade(decade) {
+  const yearSlider = document.getElementById('year-slider');
+  const selectedYearDisplay = document.getElementById('selected-year');
+  
+  if (yearSlider && selectedYearDisplay) {
+    const targetYear = decade + 5; // Middle of decade
+    yearSlider.value = targetYear;
+    selectedYearDisplay.textContent = targetYear;
+    selectedYear = targetYear;
+    
+    // Update main map
+    loadVisualization(targetYear);
+    
+    // Update immersive view
+    setTimeout(() => {
+      showImmersiveView();
+    }, 500);
+  }
+}
+
+function startImmersiveTimelapse() {
+  // Close immersive view and start main timelapse
+  hideImmersiveView();
+  setTimeout(() => {
+    startTimelapse();
+  }, 300);
+}
+
+function toggleImmersiveMode(mode) {
+  const immersiveMap = document.getElementById('immersive-map');
+  if (!immersiveMap) return;
+  
+  // This would switch between different visualization modes in the immersive view
+  console.log(`Switching immersive view to ${mode} mode`);
+  
+  // Add visual feedback
+  const controlBtns = document.querySelectorAll('.control-btn');
+  controlBtns.forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function showClimateComparison() {
+  // This would show a side-by-side comparison of different years
+  alert('Climate comparison feature - would show side-by-side year comparisons');
+}
+
+function hideImmersiveView() {
+  const immersiveOverlay = document.getElementById('immersive-overlay');
+  if (immersiveOverlay) {
+    immersiveOverlay.classList.add('hidden');
+  }
 }
 
 // Show loading spinner
@@ -1205,7 +1425,7 @@ function addVisualizationControls() {
   `;
   
   controls.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 10px;">Visualization Mode</div>
+    <div style="font-weight: bold; margin-bottom: 10px;">🎨 Visualization Mode</div>
     <div style="display: flex; flex-direction: column; gap: 8px;">
       <label style="display: flex; align-items: center; cursor: pointer;">
         <input type="radio" name="vizMode" value="temperature" checked style="margin-right: 8px;">
@@ -1224,11 +1444,41 @@ function addVisualizationControls() {
         🏔️ 3D Terrain View
       </label>
     </div>
+    
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
+      <div style="font-weight: bold; margin-bottom: 10px;">🎬 Experience Mode</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="immersive-mode-toggle" style="margin-right: 8px;">
+          ✨ Enhanced Immersive Mode
+        </label>
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="particle-effects-toggle" style="margin-right: 8px;">
+          🌟 Temperature Particles
+        </label>
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="smooth-transitions-toggle" checked style="margin-right: 8px;">
+          🎭 Smooth Transitions
+        </label>
+      </div>
+    </div>
+    
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
+      <div style="font-weight: bold; margin-bottom: 10px;">🎚️ Visual Settings</div>
+      <div style="margin-bottom: 8px;">
+        <label style="font-size: 0.9em; display: block; margin-bottom: 4px;">Opacity:</label>
+        <input type="range" id="opacity-slider" min="0.3" max="1" step="0.1" value="0.7" style="width: 100%;">
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label style="font-size: 0.9em; display: block; margin-bottom: 4px;">Intensity:</label>
+        <input type="range" id="intensity-slider" min="0.5" max="2" step="0.1" value="1" style="width: 100%;">
+      </div>
+    </div>
   `;
   
   document.getElementById('map').appendChild(controls);
   
-  // Add event listeners
+  // Add event listeners for visualization modes
   const radios = controls.querySelectorAll('input[name="vizMode"]');
   radios.forEach(radio => {
     radio.addEventListener('change', (e) => {
@@ -1237,6 +1487,222 @@ function addVisualizationControls() {
       loadVisualization(currentYear);
     });
   });
+  
+  // Add event listeners for enhanced controls
+  const immersiveModeToggle = controls.querySelector('#immersive-mode-toggle');
+  if (immersiveModeToggle) {
+    immersiveModeToggle.addEventListener('change', (e) => {
+      isImmersiveMode = e.target.checked;
+      toggleMapImmersiveMode(isImmersiveMode);
+    });
+  }
+  
+  const particleEffectsToggle = controls.querySelector('#particle-effects-toggle');
+  if (particleEffectsToggle) {
+    particleEffectsToggle.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        startTemperatureParticles();
+      } else {
+        stopTemperatureParticles();
+      }
+    });
+  }
+  
+  const opacitySlider = controls.querySelector('#opacity-slider');
+  if (opacitySlider) {
+    opacitySlider.addEventListener('input', (e) => {
+      updateVisualizationOpacity(parseFloat(e.target.value));
+    });
+  }
+  
+  const intensitySlider = controls.querySelector('#intensity-slider');
+  if (intensitySlider) {
+    intensitySlider.addEventListener('input', (e) => {
+      updateVisualizationIntensity(parseFloat(e.target.value));
+    });
+  }
+}
+
+// Enhanced visualization functions
+function toggleMapImmersiveMode(enabled) {
+  if (!map) return;
+  
+  if (enabled) {
+    // Enable immersive mode with enhanced styling
+    map.setOptions({
+      styles: [
+        {
+          featureType: 'all',
+          elementType: 'geometry',
+          stylers: [{ saturation: -20 }, { lightness: -10 }]
+        },
+        {
+          featureType: 'water',
+          elementType: 'geometry',
+          stylers: [{ color: '#1a237e' }, { saturation: 30 }]
+        },
+        {
+          featureType: 'landscape',
+          elementType: 'geometry',
+          stylers: [{ color: '#2e2e2e' }]
+        },
+        {
+          featureType: 'road',
+          elementType: 'geometry',
+          stylers: [{ visibility: 'simplified' }, { color: '#444444' }]
+        },
+        {
+          featureType: 'poi',
+          elementType: 'labels',
+          stylers: [{ visibility: 'off' }]
+        }
+      ],
+      mapTypeId: 'terrain'
+    });
+    
+    // Add atmospheric effects
+    addAtmosphericEffects();
+  } else {
+    // Disable immersive mode - return to normal styling
+    map.setOptions({
+      styles: [],
+      mapTypeId: 'terrain'
+    });
+    
+    removeAtmosphericEffects();
+  }
+}
+
+function startTemperatureParticles() {
+  if (!map) return;
+  
+  // Create particle overlay
+  const particleOverlay = document.createElement('canvas');
+  particleOverlay.id = 'temperature-particles';
+  particleOverlay.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  `;
+  
+  const mapDiv = document.getElementById('map');
+  mapDiv.appendChild(particleOverlay);
+  
+  // Initialize particle system
+  initializeParticleSystem(particleOverlay);
+}
+
+function stopTemperatureParticles() {
+  const particleCanvas = document.getElementById('temperature-particles');
+  if (particleCanvas) {
+    particleCanvas.remove();
+  }
+  
+  if (animationFrame) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
+  
+  temperatureParticles = [];
+}
+
+function initializeParticleSystem(canvas) {
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  
+  // Create temperature particles
+  for (let i = 0; i < 50; i++) {
+    temperatureParticles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      size: Math.random() * 3 + 1,
+      opacity: Math.random() * 0.5 + 0.3,
+      temperature: Math.random() * 40 + 10 // 10-50°C
+    });
+  }
+  
+  // Start animation
+  animateParticles(ctx, canvas);
+}
+
+function animateParticles(ctx, canvas) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  temperatureParticles.forEach(particle => {
+    // Update position
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+    
+    // Wrap around edges
+    if (particle.x < 0) particle.x = canvas.width;
+    if (particle.x > canvas.width) particle.x = 0;
+    if (particle.y < 0) particle.y = canvas.height;
+    if (particle.y > canvas.height) particle.y = 0;
+    
+    // Color based on temperature
+    const hue = (50 - particle.temperature) * 4; // Blue to red
+    ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${particle.opacity})`;
+    
+    // Draw particle
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  
+  animationFrame = requestAnimationFrame(() => animateParticles(ctx, canvas));
+}
+
+function updateVisualizationOpacity(opacity) {
+  if (currentOverlay && map) {
+    // Update overlay opacity
+    const overlays = map.overlayMapTypes.getArray();
+    overlays.forEach(overlay => {
+      if (overlay.setOpacity) {
+        overlay.setOpacity(opacity);
+      }
+    });
+  }
+}
+
+function updateVisualizationIntensity(intensity) {
+  // This would adjust the color intensity of the visualization
+  console.log(`Updating visualization intensity to ${intensity}`);
+  // Implementation would depend on the specific visualization type
+}
+
+function addAtmosphericEffects() {
+  // Add subtle atmospheric effects to enhance immersion
+  const mapDiv = document.getElementById('map');
+  
+  // Add a subtle overlay for atmospheric effect
+  const atmosphereOverlay = document.createElement('div');
+  atmosphereOverlay.id = 'atmosphere-overlay';
+  atmosphereOverlay.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, transparent 0%, rgba(30, 60, 114, 0.1) 100%);
+    pointer-events: none;
+    z-index: 2;
+  `;
+  
+  mapDiv.appendChild(atmosphereOverlay);
+}
+
+function removeAtmosphericEffects() {
+  const atmosphereOverlay = document.getElementById('atmosphere-overlay');
+  if (atmosphereOverlay) {
+    atmosphereOverlay.remove();
+  }
 }
 
 // Enhanced legend for different modes
