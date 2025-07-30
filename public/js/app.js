@@ -22,11 +22,15 @@ let cachedVisualizationData = {
 };
 
 // Enhanced visualization modes
-let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain'
+let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain', 'snow'
 let windLayer = null;
 let isImmersiveMode = false;
 let temperatureParticles = [];
 let animationFrame = null;
+
+// Global location and caching
+let currentLocation = { name: 'Uttar Pradesh, India', lat: 26.8467, lon: 80.9462, bounds: null };
+let locationCache = {};
 
 // Utility function for debouncing
 function debounce(func, delay) {
@@ -2103,6 +2107,22 @@ function addVisualizationControls() {
         <input type="radio" name="vizMode" value="terrain" style="margin-right: 8px;">
         🏔️ 3D Terrain View
       </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="radio" name="vizMode" value="snow" style="margin-right: 8px;">
+        ❄️ Snow Coverage
+      </label>
+    </div>
+    
+    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
+      <div style="font-weight: bold; margin-bottom: 10px;">🌍 Location Search</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <input type="text" id="location-search" placeholder="Search location (e.g., New York, London)" 
+               style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
+        <button id="search-location-btn" style="padding: 6px 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
+          🔍 Search Climate Data
+        </button>
+        <div id="location-status" style="font-size: 10px; color: #666; min-height: 15px;"></div>
+      </div>
     </div>
     
     <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
@@ -2196,6 +2216,29 @@ function addVisualizationControls() {
   if (intensitySlider) {
     intensitySlider.addEventListener('input', (e) => {
       updateVisualizationIntensity(parseFloat(e.target.value));
+    });
+  }
+  
+  // Add event listeners for location search
+  const locationSearchInput = controls.querySelector('#location-search');
+  const searchLocationBtn = controls.querySelector('#search-location-btn');
+  const locationStatus = controls.querySelector('#location-status');
+  
+  if (searchLocationBtn && locationSearchInput) {
+    searchLocationBtn.addEventListener('click', () => {
+      const location = locationSearchInput.value.trim();
+      if (location) {
+        searchAndLoadLocation(location, locationStatus);
+      }
+    });
+    
+    locationSearchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const location = locationSearchInput.value.trim();
+        if (location) {
+          searchAndLoadLocation(location, locationStatus);
+        }
+      }
     });
   }
 }
@@ -2293,13 +2336,32 @@ function initializeParticleSystem(canvas) {
   canvas.height = canvas.offsetHeight;
   
   // Get current year and fetch real temperature data for particles
-  const currentYear = parseInt(document.getElementById('year-slider').value);
+  let currentYear;
+  if (isTimelapseActive) {
+    currentYear = currentTimelapseYear;
+  } else {
+    currentYear = parseInt(document.getElementById('year-slider').value);
+  }
+  
+  console.log(`🌡️ Initializing temperature particles for year ${currentYear}`);
   
   // Create temperature particles with real Earth Engine data
   createRealTemperatureParticles(canvas.width, canvas.height, currentYear);
   
   // Start animation
   animateParticles(ctx, canvas);
+  
+  // Store reference for updates
+  window.currentParticleCanvas = canvas;
+  window.currentParticleCtx = ctx;
+}
+
+// Function to update particles when year changes
+function updateTemperatureParticles(year) {
+  if (window.currentParticleCanvas && window.currentParticleCtx) {
+    console.log(`🔄 Updating temperature particles for year ${year}`);
+    createRealTemperatureParticles(window.currentParticleCanvas.width, window.currentParticleCanvas.height, year);
+  }
 }
 
 // Create particles based on real Earth Engine temperature data
@@ -2681,6 +2743,9 @@ function loadVisualization(year) {
     case 'terrain':
       endpoint = `/ee-terrain-layer?year=${year}`;
       break;
+    case 'snow':
+      endpoint = `/ee-snow-layer?year=${year}`;
+      break;
     default:
       endpoint = `/ee-temp-layer?year=${year}`;
   }
@@ -2793,6 +2858,11 @@ function loadVisualizationFromCache(data, year) {
   
   // Add appropriate legend
   addVisualizationLegend(currentVisualizationMode, year);
+  
+  // Update temperature particles if they're active
+  if (document.getElementById('temperature-particles')) {
+    updateTemperatureParticles(year);
+  }
   
   // Show cache status
   showStatusMessage(`⚡ Loaded ${currentVisualizationMode} ${year} from cache`);
@@ -2942,8 +3012,15 @@ function loadWindLayer(windData) {
     
   } else {
     console.log('🔄 Loading wind as particle system (legacy)...');
-    createWindCanvas();
-    loadWindParticles(windData);
+    const windCanvas = createWindCanvas();
+    if (windCanvas) {
+      loadWindParticles(windData);
+      windLayer = windCanvas; // Store reference
+      console.log('✅ Wind canvas created and particles loaded');
+    } else {
+      console.error('❌ Failed to create wind canvas');
+      showStatusMessage('⚠️ Wind visualization unavailable');
+    }
   }
 }
 
@@ -3276,50 +3353,241 @@ function addVisualizationLegend(mode, year) {
       legendContent = `
         <div><strong>Temperature + Wind ${year}</strong></div>
         <div style="margin-top: 5px;">
-          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>15°C</span><span>30°C</span><span>45°C</span>
+          <div style="background: linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff8000, #ff0000, #800000); height: 20px; width: 250px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+            <span>10°C</span><span>15°C</span><span>20°C</span><span>25°C</span><span>30°C</span><span>35°C</span><span>40°C</span>
           </div>
         </div>
-        <div style="margin-top: 5px; font-size: 10px;">Temperature with wind overlay</div>
+        <div style="margin-top: 8px; padding: 5px; background: rgba(0,0,0,0.1); border-radius: 3px;">
+          <div style="font-size: 10px; margin-bottom: 3px;"><strong>Wind Speed:</strong></div>
+          <div style="background: linear-gradient(to right, #ffffff, #87ceeb, #4682b4, #191970); height: 15px; width: 150px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 9px;">
+            <span>0 m/s</span><span>5 m/s</span><span>10 m/s</span><span>15+ m/s</span>
+          </div>
+        </div>
       `;
       break;
     case 'anomaly':
       legendContent = `
         <div><strong>Temperature Anomaly ${year}</strong></div>
         <div style="margin-top: 5px;">
-          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>-3°C</span><span>Baseline</span><span>+3°C</span>
+          <div style="background: linear-gradient(to right, #000080, #0040ff, #0080ff, #00c0ff, #ffffff, #ff8000, #ff4000, #ff0000, #800000); height: 20px; width: 250px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+            <span>-4°C</span><span>-2°C</span><span>-1°C</span><span>0°C</span><span>+1°C</span><span>+2°C</span><span>+4°C</span>
           </div>
         </div>
-        <div style="margin-top: 5px; font-size: 10px;">vs 1980-2000 average</div>
+        <div style="margin-top: 5px; font-size: 10px; color: #666;">vs 1980-2000 baseline • 0.5°C precision</div>
       `;
       break;
     case 'terrain':
       legendContent = `
         <div><strong>3D Temperature ${year}</strong></div>
         <div style="margin-top: 5px;">
-          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>15°C</span><span>30°C</span><span>45°C</span>
+          <div style="background: linear-gradient(to right, #000080, #0040ff, #00ffff, #00ff00, #ffff00, #ff8000, #ff0000); height: 20px; width: 250px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+            <span>5°C</span><span>15°C</span><span>20°C</span><span>25°C</span><span>30°C</span><span>35°C</span><span>45°C</span>
           </div>
         </div>
-        <div style="margin-top: 5px; font-size: 10px;">with terrain elevation</div>
+        <div style="margin-top: 5px; font-size: 10px; color: #666;">with elevation effects • High contrast</div>
+      `;
+      break;
+    case 'snow':
+      legendContent = `
+        <div><strong>Snow Coverage ${year}</strong></div>
+        <div style="margin-top: 5px;">
+          <div style="background: linear-gradient(to right, #000080, #4169e1, #87ceeb, #b0e0e6, #ffffff, #fffafa); height: 20px; width: 200px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+            <span>No Snow</span><span>Light</span><span>Moderate</span><span>Heavy</span>
+          </div>
+        </div>
+        <div style="margin-top: 5px; font-size: 10px; color: #666;">Snow depth and coverage</div>
       `;
       break;
     default:
       legendContent = `
         <div><strong>Temperature ${year}</strong></div>
         <div style="margin-top: 5px;">
-          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>15°C</span><span>30°C</span><span>45°C</span>
+          <div style="background: linear-gradient(to right, #000080, #0040ff, #00ffff, #00ff00, #ffff00, #ff8000, #ff0000, #800000); height: 20px; width: 250px; border: 1px solid #ccc;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px;">
+            <span>10°C</span><span>15°C</span><span>20°C</span><span>25°C</span><span>30°C</span><span>35°C</span><span>40°C</span>
           </div>
         </div>
+        <div style="margin-top: 5px; font-size: 10px; color: #666;">0.5°C precision • Enhanced contrast</div>
       `;
   }
   
   legend.innerHTML = legendContent;
   document.getElementById('map').appendChild(legend);
+}
+
+// Location search and climate data loading
+async function searchAndLoadLocation(locationName, statusElement) {
+  try {
+    statusElement.textContent = '🔍 Searching location...';
+    
+    // Check cache first
+    if (locationCache[locationName]) {
+      console.log(`📍 Using cached location data for ${locationName}`);
+      const cachedLocation = locationCache[locationName];
+      await loadLocationClimateData(cachedLocation, statusElement);
+      return;
+    }
+    
+    // Use Google Maps Geocoding API to find location
+    const geocoder = new google.maps.Geocoder();
+    
+    geocoder.geocode({ address: locationName }, async (results, status) => {
+      if (status === 'OK' && results[0]) {
+        const result = results[0];
+        const location = {
+          name: result.formatted_address,
+          lat: result.geometry.location.lat(),
+          lon: result.geometry.location.lng(),
+          bounds: result.geometry.bounds,
+          country: getCountryFromResult(result),
+          types: result.types
+        };
+        
+        // Cache the location
+        locationCache[locationName] = location;
+        
+        console.log(`📍 Found location:`, location);
+        statusElement.textContent = `📍 Found: ${location.name}`;
+        
+        // Load climate data for this location
+        await loadLocationClimateData(location, statusElement);
+        
+      } else {
+        console.error('Geocoding failed:', status);
+        statusElement.textContent = '❌ Location not found';
+      }
+    });
+    
+  } catch (error) {
+    console.error('Location search error:', error);
+    statusElement.textContent = '❌ Search failed';
+  }
+}
+
+// Load climate data for a specific location
+async function loadLocationClimateData(location, statusElement) {
+  try {
+    statusElement.textContent = '🌡️ Loading climate data...';
+    
+    // Update current location
+    currentLocation = location;
+    
+    // Center map on the new location
+    map.setCenter({ lat: location.lat, lng: location.lon });
+    
+    // Determine appropriate zoom level based on location type
+    let zoomLevel = 10;
+    if (location.types.includes('country')) {
+      zoomLevel = 6;
+    } else if (location.types.includes('administrative_area_level_1')) {
+      zoomLevel = 8;
+    } else if (location.types.includes('locality')) {
+      zoomLevel = 12;
+    }
+    
+    map.setZoom(zoomLevel);
+    
+    // Determine climate characteristics based on location
+    const climateInfo = await analyzeLocationClimate(location);
+    
+    // Update visualization mode if snow is detected
+    if (climateInfo.hasSnow && currentVisualizationMode !== 'snow') {
+      console.log(`❄️ Snow detected for ${location.name}, enabling snow visualization`);
+      
+      // Update radio button
+      const snowRadio = document.querySelector('input[name="vizMode"][value="snow"]');
+      if (snowRadio) {
+        snowRadio.checked = true;
+        currentVisualizationMode = 'snow';
+      }
+    }
+    
+    // Get current year
+    let currentYear;
+    if (isTimelapseActive) {
+      currentYear = currentTimelapseYear;
+    } else {
+      currentYear = parseInt(document.getElementById('year-slider').value);
+    }
+    
+    // Load visualization for the new location
+    await loadLocationVisualization(location, currentYear);
+    
+    statusElement.textContent = `✅ ${location.name} loaded`;
+    showStatusMessage(`🌍 Switched to ${location.name} - ${climateInfo.description}`);
+    
+  } catch (error) {
+    console.error('Failed to load location climate data:', error);
+    statusElement.textContent = '❌ Failed to load data';
+  }
+}
+
+// Analyze location climate characteristics
+async function analyzeLocationClimate(location) {
+  const climateInfo = {
+    hasSnow: false,
+    description: 'Temperate climate',
+    temperatureRange: { min: 10, max: 40 },
+    precipitation: 'moderate'
+  };
+  
+  // Determine climate based on latitude and known regions
+  const lat = Math.abs(location.lat);
+  const country = location.country?.toLowerCase() || '';
+  
+  // Snow regions detection
+  if (lat > 45 || // High latitude
+      country.includes('russia') || country.includes('canada') || 
+      country.includes('norway') || country.includes('sweden') || 
+      country.includes('finland') || country.includes('iceland') ||
+      location.name.toLowerCase().includes('alaska') ||
+      location.name.toLowerCase().includes('siberia') ||
+      location.name.toLowerCase().includes('greenland')) {
+    
+    climateInfo.hasSnow = true;
+    climateInfo.description = 'Cold climate with snow';
+    climateInfo.temperatureRange = { min: -20, max: 25 };
+  } else if (lat > 35) {
+    climateInfo.description = 'Temperate climate';
+    climateInfo.temperatureRange = { min: 0, max: 35 };
+  } else if (lat < 23.5) {
+    climateInfo.description = 'Tropical climate';
+    climateInfo.temperatureRange = { min: 20, max: 45 };
+  }
+  
+  // Special cases for known snowy regions
+  const snowyRegions = ['new york', 'london', 'moscow', 'beijing', 'tokyo', 'seoul', 'denver', 'chicago'];
+  if (snowyRegions.some(region => location.name.toLowerCase().includes(region))) {
+    climateInfo.hasSnow = true;
+  }
+  
+  return climateInfo;
+}
+
+// Load visualization for a specific location
+async function loadLocationVisualization(location, year) {
+  try {
+    console.log(`🌍 Loading ${currentVisualizationMode} for ${location.name} (${year})`);
+    
+    // For now, use the existing loadVisualization logic
+    // In a full implementation, this would pass location parameters to the backend
+    loadVisualization(year);
+    
+  } catch (error) {
+    console.error('Failed to load location visualization:', error);
+    showError(`Failed to load ${currentVisualizationMode} data for ${location.name}`);
+  }
+}
+
+// Helper function to extract country from geocoding result
+function getCountryFromResult(result) {
+  const countryComponent = result.address_components.find(
+    component => component.types.includes('country')
+  );
+  return countryComponent ? countryComponent.long_name : '';
 }
