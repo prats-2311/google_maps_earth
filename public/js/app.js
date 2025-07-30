@@ -12,6 +12,10 @@ let timelapseData = {};
 let isTimelapseRunning = false;
 let currentTimelapseYear = 1979;
 
+// Enhanced visualization modes
+let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain'
+let windLayer = null;
+
 // Utility function for debouncing
 function debounce(func, delay) {
   let timeoutId;
@@ -24,15 +28,11 @@ function debounce(func, delay) {
 // Initialize the map when the page loads
 window.onload = function() {
   console.log("Window loaded, setting up event listeners...");
-  // Setup event listeners first
   setupEventListeners();
   
-  // Only show loading spinner if not already initialized
   if (!isInitialized) {
     console.log("App not yet initialized, showing loading spinner...");
     showLoadingSpinner();
-  } else {
-    console.log("App already initialized, skipping loading spinner");
   }
 };
 
@@ -41,7 +41,8 @@ window.initMap = function() {
   console.log("Google Maps API loaded, initializing map...");
   try {
     initMapInternal();
-    isInitialized = true; // Mark as initialized
+    isInitialized = true;
+    console.log("Map initialization completed successfully");
   } catch (error) {
     console.error("Error in initMap:", error);
     hideLoadingSpinner();
@@ -51,7 +52,19 @@ window.initMap = function() {
 
 // Ensure initMap is available globally for the callback
 if (typeof window !== 'undefined') {
-  window.initMap = window.initMap;
+  // Make sure initMap is properly exposed to the global scope
+  window.initMap = function() {
+    console.log("Google Maps API loaded, initializing map...");
+    try {
+      initMapInternal();
+      isInitialized = true;
+      console.log("Map initialization completed successfully");
+    } catch (error) {
+      console.error("Error in initMap:", error);
+      hideLoadingSpinner();
+      showError("Failed to initialize Google Maps: " + error.message);
+    }
+  };
 }
 
 // Initialize Google Map
@@ -95,11 +108,16 @@ function initMapInternal() {
     
     // Wait for map to be fully loaded before adding overlays
     google.maps.event.addListenerOnce(map, 'idle', function() {
-      console.log("Map is idle, loading initial temperature data...");
+      console.log("Map is idle, loading initial visualization...");
       hideLoadingSpinner();
       
-      // Load initial temperature data
-      loadTemperatureLayer(selectedYear);
+      // Load initial visualization instead of just temperature
+      loadVisualization(selectedYear);
+      
+      // Add visualization controls
+      setTimeout(() => {
+        addVisualizationControls();
+      }, 1000);
       
       if (window.appLoaded) {
         window.appLoaded();
@@ -119,90 +137,106 @@ function setupEventListeners() {
   const yearSlider = document.getElementById('year-slider');
   const selectedYearDisplay = document.getElementById('selected-year');
   
-  // Create debounced version of loadTemperatureLayer for time-lapse feature
-  // Reduced debounce time for more responsive time-lapse
-  const debouncedLoadTemperatureLayer = debounce(loadTemperatureLayer, 100);
-  
-  yearSlider.addEventListener('input', function() {
-    selectedYear = parseInt(this.value);
+  if (yearSlider && selectedYearDisplay) {
+    // Create debounced version for visualization loading
+    const debouncedLoadVisualization = debounce(function(year) {
+      selectedYear = year;
+      loadVisualization(year);
+    }, 100);
     
-    // Update display immediately for responsiveness
-    selectedYearDisplay.textContent = selectedYear;
-    
-    console.log(`Year slider changed to: ${selectedYear}`);
-    
-    if (timelapseData[selectedYear]) {
-      // Use cached data for instant display
-      displayCachedYear(selectedYear);
-    } else {
-      // Load from server
-      debouncedLoadTemperatureLayer(selectedYear);
-    }
-  });
+    yearSlider.addEventListener('input', function(e) {
+      const year = parseInt(e.target.value);
+      selectedYearDisplay.textContent = year;
+      debouncedLoadVisualization(year);
+    });
+  }
   
   // Prediction button
   const predictBtn = document.getElementById('predict-btn');
-  predictBtn.addEventListener('click', function() {
-    showLoadingSpinner();
-    setTimeout(() => {
-      trainAndPredict();
-      fetchAirQuality();
-      hideLoadingSpinner();
-      
-      // Show the immersive panel after prediction
-      document.getElementById('immersive-panel').classList.remove('hidden');
-    }, 1500); // Simulate processing time
-  });
+  if (predictBtn) {
+    predictBtn.addEventListener('click', function() {
+      showLoadingSpinner();
+      setTimeout(() => {
+        trainAndPredict();
+        fetchAirQuality();
+        hideLoadingSpinner();
+        
+        // Show the immersive panel after prediction
+        const immersivePanel = document.getElementById('immersive-panel');
+        if (immersivePanel) {
+          immersivePanel.classList.remove('hidden');
+        }
+      }, 1500);
+    });
+  }
   
   // Solar potential button
   const solarBtn = document.getElementById('show-solar-btn');
-  solarBtn.addEventListener('click', function() {
-    showSolarPotential();
-  });
+  if (solarBtn) {
+    solarBtn.addEventListener('click', function() {
+      showSolarPotential();
+    });
+  }
   
   // Cooling zones button
   const coolingBtn = document.getElementById('show-cooling-zones-btn');
-  coolingBtn.addEventListener('click', function() {
-    showCoolingZones();
-  });
-  
-  // Immersive view button
-  const immersiveBtn = document.getElementById('immersive-view-btn');
-  immersiveBtn.addEventListener('click', function() {
-    showImmersiveView();
-  });
-  
-  // Close immersive view button
-  const closeImmersiveBtn = document.getElementById('close-immersive-btn');
-  closeImmersiveBtn.addEventListener('click', function() {
-    document.getElementById('immersive-overlay').classList.add('hidden');
-  });
-  
-  // Close loading spinner button
-  const closeLoadingBtn = document.getElementById('close-loading-btn');
-  if (closeLoadingBtn) {
-    closeLoadingBtn.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log("Close loading button clicked");
-      hideLoadingSpinner();
+  if (coolingBtn) {
+    coolingBtn.addEventListener('click', function() {
+      showCoolingZones();
     });
-  } else {
-    console.error("Close loading button not found!");
   }
-
-  // Bulk loading button
-  const loadAllBtn = document.getElementById('load-all-data-btn');
-  loadAllBtn.addEventListener('click', startBulkLoading);
-
-  // Time-lapse controls
-  const playBtn = document.getElementById('play-timelapse-btn');
-  const pauseBtn = document.getElementById('pause-timelapse-btn');
-  const stopBtn = document.getElementById('stop-timelapse-btn');
-
-  playBtn.addEventListener('click', startTimelapse);
-  pauseBtn.addEventListener('click', pauseTimelapse);
-  stopBtn.addEventListener('click', stopTimelapse);
+  
+  // Load all historical data button
+  const loadAllDataBtn = document.getElementById('load-all-data-btn');
+  if (loadAllDataBtn) {
+    loadAllDataBtn.addEventListener('click', function() {
+      startBulkLoading();
+    });
+  }
+  
+  // Time-lapse control buttons
+  const playTimelapseBtn = document.getElementById('play-timelapse-btn');
+  if (playTimelapseBtn) {
+    playTimelapseBtn.addEventListener('click', function() {
+      startTimelapse();
+    });
+  }
+  
+  const pauseTimelapseBtn = document.getElementById('pause-timelapse-btn');
+  if (pauseTimelapseBtn) {
+    pauseTimelapseBtn.addEventListener('click', function() {
+      pauseTimelapse();
+    });
+  }
+  
+  const stopTimelapseBtn = document.getElementById('stop-timelapse-btn');
+  if (stopTimelapseBtn) {
+    stopTimelapseBtn.addEventListener('click', function() {
+      stopTimelapse();
+    });
+  }
+  
+  // Immersive view buttons
+  const immersiveViewBtn = document.getElementById('immersive-view-btn');
+  if (immersiveViewBtn) {
+    immersiveViewBtn.addEventListener('click', function() {
+      showImmersiveView();
+    });
+  }
+  
+  const closeImmersiveBtn = document.getElementById('close-immersive-btn');
+  if (closeImmersiveBtn) {
+    closeImmersiveBtn.addEventListener('click', function() {
+      hideImmersiveView();
+    });
+  }
+  
+  // Add visualization controls after map is ready
+  setTimeout(() => {
+    if (document.getElementById('map') && typeof addVisualizationControls === 'function') {
+      addVisualizationControls();
+    }
+  }, 2000);
 }
 
 // Load the dedicated Earth Engine temperature layer for time-lapse feature
@@ -1146,5 +1180,640 @@ function addTemperatureLegend() {
     </div>
   `;
   
+  document.getElementById('map').appendChild(legend);
+}
+
+// Enhanced visualization modes
+// Variables already declared at the top of the file
+// let currentVisualizationMode = 'temperature'; // 'temperature', 'weather', 'anomaly', 'terrain'
+// let windLayer = null;
+
+// Add visualization mode selector
+function addVisualizationControls() {
+  const controls = document.createElement('div');
+  controls.id = 'viz-controls';
+  controls.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255,255,255,0.9);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 1000;
+    font-family: Arial, sans-serif;
+  `;
+  
+  controls.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 10px;">Visualization Mode</div>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="radio" name="vizMode" value="temperature" checked style="margin-right: 8px;">
+        🌡️ Temperature Only
+      </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="radio" name="vizMode" value="weather" style="margin-right: 8px;">
+        🌪️ Temperature + Wind
+      </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="radio" name="vizMode" value="anomaly" style="margin-right: 8px;">
+        📊 Temperature Anomaly
+      </label>
+      <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="radio" name="vizMode" value="terrain" style="margin-right: 8px;">
+        🏔️ 3D Terrain View
+      </label>
+    </div>
+  `;
+  
+  document.getElementById('map').appendChild(controls);
+  
+  // Add event listeners
+  const radios = controls.querySelectorAll('input[name="vizMode"]');
+  radios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      currentVisualizationMode = e.target.value;
+      const currentYear = parseInt(document.getElementById('year-slider').value);
+      loadVisualization(currentYear);
+    });
+  });
+}
+
+// Enhanced legend for different modes
+function addEnhancedLegend(mode, year) {
+  // Remove existing legend
+  const existingLegend = document.getElementById('temp-legend');
+  if (existingLegend) {
+    existingLegend.remove();
+  }
+  
+  const legend = document.createElement('div');
+  legend.id = 'temp-legend';
+  legend.style.cssText = `
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255,255,255,0.9);
+    padding: 12px;
+    border-radius: 8px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 1000;
+    max-width: 250px;
+  `;
+  
+  let legendContent = '';
+  
+  switch(mode) {
+    case 'temperature':
+    case 'weather':
+      legendContent = `
+        <div style="font-weight: bold; margin-bottom: 8px;">Temperature (°C) - ${year}</div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+          <div style="width: 200px; height: 20px; background: linear-gradient(to right, 
+            blue, cyan, green, yellow, orange, red); border: 1px solid #ccc;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+          <span>25°C</span><span>27.5°C</span><span>30°C</span>
+        </div>
+        ${mode === 'weather' ? '<div style="font-size: 10px; color: #666;">+ Animated wind streamlines</div>' : ''}
+      `;
+      break;
+      
+    case 'anomaly':
+      legendContent = `
+        <div style="font-weight: bold; margin-bottom: 8px;">Temperature Anomaly - ${year}</div>
+        <div style="font-size: 11px; margin-bottom: 8px;">Difference from 1980-2000 baseline</div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+          <div style="width: 200px; height: 20px; background: linear-gradient(to right, 
+            #000080, #0080ff, #80e0ff, #ffffff, #ffe080, #ff8000, #800000); border: 1px solid #ccc;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>-2°C</span><span>0°C</span><span>+2°C</span>
+        </div>
+        <div style="font-size: 10px; color: #666; margin-top: 5px;">
+          Blue = Cooler than average | Red = Warmer than average
+        </div>
+      `;
+      break;
+      
+    case 'terrain':
+      legendContent = `
+        <div style="font-weight: bold; margin-bottom: 8px;">3D Temperature - ${year}</div>
+        <div style="font-size: 11px; margin-bottom: 8px;">Temperature over topographic relief</div>
+        <div style="display: flex; align-items: center; margin-bottom: 5px;">
+          <div style="width: 200px; height: 20px; background: linear-gradient(to right, 
+            blue, cyan, green, yellow, orange, red); border: 1px solid #ccc;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>25°C</span><span>27.5°C</span><span>30°C</span>
+        </div>
+        <div style="font-size: 10px; color: #666; margin-top: 5px;">
+          Hillshade shows elevation and terrain features
+        </div>
+      `;
+      break;
+  }
+  
+  legend.innerHTML = legendContent;
+  document.getElementById('map').appendChild(legend);
+}
+
+// Main visualization loader
+function loadVisualization(year) {
+  // If visualization controls aren't ready yet, fall back to temperature
+  if (!currentVisualizationMode || currentVisualizationMode === 'temperature') {
+    console.log(`Loading temperature layer for year ${year} (fallback)`);
+    loadTemperatureLayer(year);
+    return;
+  }
+  
+  if (isLoading) {
+    console.log("Already loading, request ignored");
+    return;
+  }
+  
+  isLoading = true;
+  showLoadingSpinner();
+  
+  // Clear existing overlays
+  if (currentOverlay) {
+    map.overlayMapTypes.clear();
+    currentOverlay = null;
+  }
+  
+  // Clear wind layer if exists
+  if (windLayer) {
+    if (windLayer.remove) {
+      windLayer.remove();
+    } else if (windLayer.parentNode) {
+      windLayer.parentNode.removeChild(windLayer);
+    }
+    windLayer = null;
+  }
+  
+  let endpoint = '';
+  switch(currentVisualizationMode) {
+    case 'temperature':
+      endpoint = `/ee-temp-layer?year=${year}`;
+      break;
+    case 'weather':
+      endpoint = `/ee-weather-layer?year=${year}`;
+      break;
+    case 'anomaly':
+      endpoint = `/ee-anomaly-layer?year=${year}`;
+      break;
+    case 'terrain':
+      endpoint = `/ee-terrain-layer?year=${year}`;
+      break;
+    default:
+      endpoint = `/ee-temp-layer?year=${year}`;
+  }
+  
+  console.log(`Loading ${currentVisualizationMode} visualization for year ${year}...`);
+  
+  fetch(endpoint)
+    .then(response => {
+      console.log(`Response status for ${currentVisualizationMode}:`, response.status);
+      if (!response.ok) {
+        return response.json().then(errorData => {
+          throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log(`${currentVisualizationMode} response:`, data);
+      
+      if (data.success) {
+        if (currentVisualizationMode === 'weather') {
+          // Handle combined weather data
+          loadTemperatureFromData(data.temperature, year);
+          if (data.wind) {
+            loadWindLayer(data.wind);
+          }
+        } else {
+          // Handle single layer data
+          loadTemperatureFromData(data, year);
+        }
+        
+        // Add appropriate legend
+        addVisualizationLegend(currentVisualizationMode, year);
+      } else {
+        throw new Error(data.error || 'Failed to load visualization');
+      }
+      
+      hideLoadingSpinner();
+    })
+    .catch(error => {
+      console.error(`Error loading ${currentVisualizationMode}:`, error);
+      hideLoadingSpinner();
+      
+      // Show specific error message
+      showError(`Failed to load ${currentVisualizationMode} for ${year}: ${error.message}`);
+      
+      // Only fallback to temperature if we're not already trying temperature
+      if (currentVisualizationMode !== 'temperature') {
+        console.log("Falling back to temperature layer...");
+        setTimeout(() => {
+          currentVisualizationMode = 'temperature';
+          loadTemperatureLayer(year);
+        }, 1000);
+      }
+    })
+    .finally(() => {
+      isLoading = false;
+    });
+}
+
+// Load temperature layer from data object
+function loadTemperatureFromData(data, year) {
+  let getTileUrlFunction;
+  
+  if (data.urlFormat) {
+    console.log(`Using urlFormat for ${currentVisualizationMode}:`, data.urlFormat);
+    getTileUrlFunction = function(tile, zoom) {
+      const url = data.urlFormat
+        .replace('{z}', zoom)
+        .replace('{x}', tile.x)
+        .replace('{y}', tile.y);
+      if (currentVisualizationMode === 'anomaly') {
+        console.log(`Anomaly tile URL: ${url}`);
+      }
+      return url;
+    };
+  } else {
+    console.log(`Using legacy format for ${currentVisualizationMode} with mapid:`, data.mapid);
+    getTileUrlFunction = function(tile, zoom) {
+      const baseUrl = `https://earthengine.googleapis.com/map/${data.mapid}/${zoom}/${tile.x}/${tile.y}`;
+      const token = data.token ? `?token=${data.token}` : '';
+      const cacheBuster = `${token ? '&' : '?'}cb=${Date.now()}&year=${year}`;
+      const url = `${baseUrl}${token}${cacheBuster}`;
+      if (currentVisualizationMode === 'anomaly') {
+        console.log(`Anomaly tile URL: ${url}`);
+      }
+      return url;
+    };
+  }
+  
+  // Set appropriate opacity for different visualization modes
+  let opacity = 0.7; // default
+  if (currentVisualizationMode === 'weather') {
+    opacity = 0.6; // lower for weather to show wind overlay
+  } else if (currentVisualizationMode === 'anomaly') {
+    opacity = 0.9; // higher for anomaly to make subtle differences visible
+  } else if (currentVisualizationMode === 'terrain') {
+    opacity = 0.8; // medium for terrain blend
+  }
+  
+  const tileSource = new google.maps.ImageMapType({
+    name: `${currentVisualizationMode} ${year}`,
+    getTileUrl: getTileUrlFunction,
+    tileSize: new google.maps.Size(256, 256),
+    minZoom: 1,
+    maxZoom: 20,
+    opacity: opacity
+  });
+  
+  map.overlayMapTypes.clear();
+  map.overlayMapTypes.insertAt(0, tileSource);
+  currentOverlay = tileSource;
+  
+  console.log(`${currentVisualizationMode} layer loaded for year ${year} with opacity ${opacity}`);
+  
+  // Add specific logging for anomaly
+  if (currentVisualizationMode === 'anomaly') {
+    console.log('Anomaly layer details:', {
+      mapid: data.mapid,
+      token: data.token,
+      urlFormat: data.urlFormat,
+      dataType: data.dataType,
+      units: data.units,
+      opacity: opacity
+    });
+    
+    // Force map refresh for anomaly data
+    setTimeout(() => {
+      console.log('Forcing map refresh for anomaly visualization...');
+      google.maps.event.trigger(map, 'resize');
+      map.setZoom(map.getZoom());
+    }, 500);
+  }
+}
+
+// Load wind layer using webgl-wind library
+function loadWindLayer(windData) {
+  console.log('Wind data received:', windData);
+  
+  // Remove existing wind canvas if it exists
+  if (windLayer) {
+    if (windLayer.remove) {
+      windLayer.remove();
+    } else if (windLayer.parentNode) {
+      windLayer.parentNode.removeChild(windLayer);
+    }
+  }
+  
+  // Create wind canvas overlay
+  const windCanvas = document.createElement('canvas');
+  windCanvas.id = 'wind-canvas';
+  windCanvas.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 100;
+    background: transparent;
+  `;
+  
+  document.getElementById('map').appendChild(windCanvas);
+  
+  // Set canvas dimensions to match the map container
+  const mapContainer = document.getElementById('map');
+  windCanvas.width = mapContainer.clientWidth;
+  windCanvas.height = mapContainer.clientHeight;
+  
+  // Prepare wind data for the webgl-wind library
+  const width = windData.width;
+  const height = windData.height;
+  
+  // Create Float32Arrays for the U and V components
+  const uData = new Float32Array(windData.uData);
+  const vData = new Float32Array(windData.vData);
+  
+  try {
+    // Get WebGL context from the canvas
+    const gl = windCanvas.getContext('webgl') || windCanvas.getContext('experimental-webgl');
+    if (!gl) {
+      throw new Error('WebGL not supported in this browser');
+    }
+    
+    // Initialize the wind visualization with the WebGL context
+    const wind = new WindGL(gl);
+    
+    // Set wind configuration directly on the WindGL instance
+    wind.numParticles = 5000;
+    wind.fadeOpacity = 0.996;
+    wind.speedFactor = 0.25;
+    wind.dropRate = 0.003;
+    wind.dropRateBump = 0.01;
+    
+    // Skip setColorRamp entirely - let the library use its default colors
+    // The error is coming from this function, so we'll avoid calling it
+    console.log('Skipping setColorRamp to avoid color parsing error');
+    
+    // Create wind image data from U and V components
+    const windImage = createWindImage(width, height, uData, vData);
+    
+    // Set the wind data
+    wind.setWind({
+      image: windImage
+    });
+    
+    // Helper function to create wind image data
+    function createWindImage(width, height, uData, vData) {
+      // Create a canvas to generate the wind image
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Could not get 2D context for wind image creation');
+      }
+      
+      // Create ImageData object
+      const imageData = ctx.createImageData(width, height);
+      const data = imageData.data;
+      
+      // Fill the image with wind data
+      for (let i = 0; i < width * height; i++) {
+        const u = uData[i] || 0;
+        const v = vData[i] || 0;
+        
+        // Normalize values to 0-255 range
+        const uNorm = Math.max(0, Math.min(255, Math.floor((u - windData.uMin) / (windData.uMax - windData.uMin) * 255)));
+        const vNorm = Math.max(0, Math.min(255, Math.floor((v - windData.vMin) / (windData.vMax - windData.vMin) * 255)));
+        
+        // RGBA for each pixel
+        data[i * 4 + 0] = uNorm; // Red channel for U component
+        data[i * 4 + 1] = vNorm; // Green channel for V component
+        data[i * 4 + 2] = 0;     // Blue channel
+        data[i * 4 + 3] = 255;   // Alpha channel (fully opaque)
+      }
+      
+      // Put the image data on the canvas
+      ctx.putImageData(imageData, 0, 0);
+      
+      return canvas;
+    }
+    
+    // Start the animation
+    function frame() {
+      if (windLayer === windCanvas && wind) {
+        wind.draw();
+        requestAnimationFrame(frame);
+      }
+    }
+    requestAnimationFrame(frame);
+    
+    console.log('Wind visualization initialized with webgl-wind');
+    
+  } catch (error) {
+    console.error('Error initializing wind visualization:', error);
+    
+    // Fallback to simple visualization if WebGL fails
+    fallbackToSimpleWindVisualization();
+  }
+  
+  // Helper function for fallback visualization
+  function fallbackToSimpleWindVisualization() {
+    try {
+      console.log('Attempting fallback wind visualization...');
+      
+      // Get 2D context
+      const ctx = windCanvas.getContext('2d');
+      
+      if (!ctx) {
+        console.error('Could not get 2D context for fallback wind visualization');
+        return;
+      }
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+      
+      // Draw simple wind arrows as fallback
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      
+      // Calculate grid for wind arrows
+      const gridSize = 50;
+      const arrowScale = 20;
+      
+      for (let x = gridSize; x < windCanvas.width; x += gridSize) {
+        for (let y = gridSize; y < windCanvas.height; y += gridSize) {
+          // Get wind data for this position
+          const xIndex = Math.floor((x / windCanvas.width) * width);
+          const yIndex = Math.floor((y / windCanvas.height) * height);
+          const dataIndex = yIndex * width + xIndex;
+          
+          if (dataIndex >= 0 && dataIndex < windData.uData.length) {
+            const u = (windData.uData[dataIndex] || 0) * arrowScale;
+            const v = (windData.vData[dataIndex] || 0) * arrowScale;
+            
+            // Skip if wind is too weak
+            const magnitude = Math.sqrt(u * u + v * v);
+            if (magnitude < 2) continue;
+            
+            // Draw arrow shaft
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + u, y + v);
+            ctx.stroke();
+            
+            // Draw arrow head
+            const angle = Math.atan2(v, u);
+            const headLength = 8;
+            
+            ctx.beginPath();
+            ctx.moveTo(x + u, y + v);
+            ctx.lineTo(
+              x + u - headLength * Math.cos(angle - 0.3), 
+              y + v - headLength * Math.sin(angle - 0.3)
+            );
+            ctx.moveTo(x + u, y + v);
+            ctx.lineTo(
+              x + u - headLength * Math.cos(angle + 0.3), 
+              y + v - headLength * Math.sin(angle + 0.3)
+            );
+            ctx.stroke();
+          }
+        }
+      }
+      
+      console.log('Fallback wind visualization completed');
+      
+    } catch (fallbackError) {
+      console.error('Error in fallback wind visualization:', fallbackError);
+    }
+  }
+  
+  // Store reference to the canvas
+  windLayer = windCanvas;
+}
+
+// Update the DOMContentLoaded event listener
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("DOM loaded, setting up visualization controls...");
+  
+  // Add visualization controls after a short delay to ensure map is ready
+  setTimeout(() => {
+    if (document.getElementById('map')) {
+      addVisualizationControls();
+    }
+  }, 1000);
+  
+  // Update slider event listener
+  const yearSlider = document.getElementById('year-slider'); // Use correct ID
+  if (yearSlider) {
+    const debouncedLoadVisualization = debounce(loadVisualization, 100);
+    
+    yearSlider.addEventListener('input', function(e) {
+      const year = parseInt(e.target.value);
+      const yearDisplay = document.getElementById('selected-year');
+      if (yearDisplay) {
+        yearDisplay.textContent = year;
+      }
+      selectedYear = year;
+      debouncedLoadVisualization(year);
+    });
+  }
+});
+
+// At the end of app.js, make sure all functions are properly exposed
+if (typeof window !== 'undefined') {
+  // Core functions
+  window.initMap = window.initMap;
+  window.initMapInternal = initMapInternal;
+  window.loadVisualization = loadVisualization;
+  
+  // Debug functions
+  window.debugSpinnerState = debugSpinnerState;
+  window.hideLoadingSpinner = hideLoadingSpinner;
+  window.showLoadingSpinner = showLoadingSpinner;
+  window.analyzeEarthEngineData = analyzeEarthEngineData;
+  
+  // New visualization functions
+  window.addVisualizationControls = addVisualizationControls;
+  window.loadTemperatureFromData = loadTemperatureFromData;
+  window.loadWindLayer = loadWindLayer;
+}
+
+// Add function to create appropriate legends for different visualization types
+function addVisualizationLegend(mode, year) {
+  // Remove existing legend
+  const existingLegend = document.querySelector('.visualization-legend');
+  if (existingLegend) {
+    existingLegend.remove();
+  }
+  
+  const legend = document.createElement('div');
+  legend.className = 'visualization-legend';
+  legend.style.cssText = `
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 1000;
+  `;
+  
+  let legendContent = '';
+  
+  switch(mode) {
+    case 'anomaly':
+      legendContent = `
+        <div><strong>Temperature Anomaly ${year}</strong></div>
+        <div style="margin-top: 5px;">
+          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+            <span>-3°C</span><span>Baseline</span><span>+3°C</span>
+          </div>
+        </div>
+        <div style="margin-top: 5px; font-size: 10px;">vs 1980-2000 average</div>
+      `;
+      break;
+    case 'terrain':
+      legendContent = `
+        <div><strong>3D Temperature ${year}</strong></div>
+        <div style="margin-top: 5px;">
+          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+            <span>15°C</span><span>30°C</span><span>45°C</span>
+          </div>
+        </div>
+        <div style="margin-top: 5px; font-size: 10px;">with terrain elevation</div>
+      `;
+      break;
+    default:
+      legendContent = `
+        <div><strong>Temperature ${year}</strong></div>
+        <div style="margin-top: 5px;">
+          <div style="background: linear-gradient(to right, #000080, #ffffff, #800000); height: 20px; width: 200px;"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+            <span>15°C</span><span>30°C</span><span>45°C</span>
+          </div>
+        </div>
+      `;
+  }
+  
+  legend.innerHTML = legendContent;
   document.getElementById('map').appendChild(legend);
 }

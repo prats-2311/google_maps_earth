@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Anomaly Visualization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        #map { width: 100%; height: 400px; border: 1px solid #ccc; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Anomaly Visualization Debug</h1>
+    
+    <div class="test-section">
+        <h2>1. Test Backend Endpoint</h2>
+        <button onclick="testBackend()">Test /ee-anomaly-layer?year=2000</button>
+        <div id="backend-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Test Tile URL Generation</h2>
+        <button onclick="testTileUrls()">Generate Sample Tile URLs</button>
+        <div id="tile-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Test Map Visualization</h2>
+        <button onclick="testMapVisualization()">Load Anomaly on Map</button>
+        <div id="map"></div>
+        <div id="map-result" class="result"></div>
+    </div>
+    
+    <script>
+        let map;
+        let anomalyData = null;
+        
+        // Initialize map
+        function initMap() {
+            const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: uttarPradeshCenter,
+                zoom: 7,
+                mapTypeId: 'terrain'
+            });
+            console.log('Map initialized');
+        }
+        
+        // Test backend endpoint
+        async function testBackend() {
+            const resultDiv = document.getElementById('backend-result');
+            resultDiv.innerHTML = 'Testing backend...';
+            
+            try {
+                const response = await fetch('/ee-anomaly-layer?year=2000');
+                const data = await response.json();
+                
+                if (data.success) {
+                    anomalyData = data;
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Backend Success</strong><br>
+                        MapID: ${data.mapid}<br>
+                        Token: ${data.token || 'Empty'}<br>
+                        URL Format: ${data.urlFormat || 'Not provided'}<br>
+                        Data Type: ${data.dataType}<br>
+                        Units: ${data.units}
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `❌ Backend Error: ${data.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `❌ Request Error: ${error.message}`;
+            }
+        }
+        
+        // Test tile URL generation
+        function testTileUrls() {
+            const resultDiv = document.getElementById('tile-result');
+            
+            if (!anomalyData) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ No anomaly data. Run backend test first.';
+                return;
+            }
+            
+            const testTiles = [
+                { x: 100, y: 50, z: 8 },
+                { x: 200, y: 100, z: 9 },
+                { x: 400, y: 200, z: 10 }
+            ];
+            
+            let urlsHtml = '<strong>Generated Tile URLs:</strong><br>';
+            
+            testTiles.forEach(tile => {
+                let url;
+                if (anomalyData.urlFormat) {
+                    url = anomalyData.urlFormat
+                        .replace('{z}', tile.z)
+                        .replace('{x}', tile.x)
+                        .replace('{y}', tile.y);
+                } else {
+                    const baseUrl = `https://earthengine.googleapis.com/map/${anomalyData.mapid}/${tile.z}/${tile.x}/${tile.y}`;
+                    const token = anomalyData.token ? `?token=${anomalyData.token}` : '';
+                    url = `${baseUrl}${token}`;
+                }
+                
+                urlsHtml += `<div style="margin: 5px 0; font-size: 12px; word-break: break-all;">
+                    Tile ${tile.z}/${tile.x}/${tile.y}: <a href="${url}" target="_blank">${url}</a>
+                </div>`;
+            });
+            
+            resultDiv.className = 'result success';
+            resultDiv.innerHTML = urlsHtml;
+        }
+        
+        // Test map visualization
+        function testMapVisualization() {
+            const resultDiv = document.getElementById('map-result');
+            
+            if (!anomalyData) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ No anomaly data. Run backend test first.';
+                return;
+            }
+            
+            if (!map) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ Map not initialized.';
+                return;
+            }
+            
+            try {
+                // Clear existing overlays
+                map.overlayMapTypes.clear();
+                
+                // Create tile URL function
+                let getTileUrlFunction;
+                if (anomalyData.urlFormat) {
+                    getTileUrlFunction = function(tile, zoom) {
+                        const url = anomalyData.urlFormat
+                            .replace('{z}', zoom)
+                            .replace('{x}', tile.x)
+                            .replace('{y}', tile.y);
+                        console.log(`Anomaly tile URL: ${url}`);
+                        return url;
+                    };
+                } else {
+                    getTileUrlFunction = function(tile, zoom) {
+                        const baseUrl = `https://earthengine.googleapis.com/map/${anomalyData.mapid}/${zoom}/${tile.x}/${tile.y}`;
+                        const token = anomalyData.token ? `?token=${anomalyData.token}` : '';
+                        const url = `${baseUrl}${token}`;
+                        console.log(`Anomaly tile URL: ${url}`);
+                        return url;
+                    };
+                }
+                
+                // Create tile source
+                const tileSource = new google.maps.ImageMapType({
+                    name: 'Temperature Anomaly 2000',
+                    getTileUrl: getTileUrlFunction,
+                    tileSize: new google.maps.Size(256, 256),
+                    minZoom: 1,
+                    maxZoom: 20,
+                    opacity: 0.8
+                });
+                
+                // Add to map
+                map.overlayMapTypes.insertAt(0, tileSource);
+                
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = '✅ Anomaly layer added to map. Check console for tile loading logs.';
+                
+                // Add event listeners to detect tile loading
+                let tilesLoaded = 0;
+                let tilesErrored = 0;
+                
+                // Monitor tile loading (this is a bit hacky but useful for debugging)
+                const originalImage = window.Image;
+                window.Image = function() {
+                    const img = new originalImage();
+                    const originalOnLoad = img.onload;
+                    const originalOnError = img.onerror;
+                    
+                    img.onload = function() {
+                        if (this.src.includes('earthengine.googleapis.com')) {
+                            tilesLoaded++;
+                            console.log(`Anomaly tile loaded successfully: ${this.src}`);
+                            resultDiv.innerHTML += `<br>Tiles loaded: ${tilesLoaded}`;
+                        }
+                        if (originalOnLoad) originalOnLoad.call(this);
+                    };
+                    
+                    img.onerror = function() {
+                        if (this.src.includes('earthengine.googleapis.com')) {
+                            tilesErrored++;
+                            console.error(`Anomaly tile failed to load: ${this.src}`);
+                            resultDiv.innerHTML += `<br><span style="color: red;">Tiles errored: ${tilesErrored}</span>`;
+                        }
+                        if (originalOnError) originalOnError.call(this);
+                    };
+                    
+                    return img;
+                };
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `❌ Visualization Error: ${error.message}`;
+                console.error('Visualization error:', error);
+            }
+        }
+        
+        // Initialize when page loads
+        window.onload = function() {
+            console.log('Debug page loaded');
+        };
+    </script>
+    
+    <!-- Load Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBR5_tFhPYuUTaaNgvPBbSzy8VnPSZTJNo&callback=initMap" async defer></script>
+</body>
+</html>
