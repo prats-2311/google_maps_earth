@@ -1,18 +1,19 @@
-# Climate Visualization for Uttar Pradesh
+# Global Climate Visualization
 
-An interactive climate visualization application that shows historical temperature data, predicts future climate trends, and displays environmental health impacts for Uttar Pradesh, India.
+An interactive climate visualization application that shows historical temperature data, predicts future climate trends, and displays environmental health impacts for any location worldwide.
 
 ## Features
 
 ### Core Features
+- **Global Location Search**: Search and select any location worldwide for climate analysis
 - **Historical Climate Time-Lapse**: Interactive visualization showing average annual temperature from 1980 to present
-- **AI-Powered Future Prediction**: TensorFlow.js model to predict temperatures for future decades
-- **Real-Time Health Impact**: Display of current Air Quality Index for Lucknow
+- **AI-Powered Future Prediction**: TensorFlow.js model to predict temperatures for future decades based on location-specific data
+- **Real-Time Health Impact**: Display of current Air Quality Index for selected location
 
 ### Advanced Features
-- **Immersive 3D Impact Visualization**: Cinematic 3D fly-through of Lucknow landmarks
-- **Solutions Layer**: Solar potential visualization and green spaces mapping
-- **Personalized Location Analysis**: Address-specific environmental information
+- **Immersive 3D Impact Visualization**: Cinematic 3D fly-through of selected location landmarks
+- **Solutions Layer**: Solar potential visualization and green spaces mapping for any location
+- **Personalized Location Analysis**: Address-specific environmental information worldwide
 
 ## Current Implementation Status
 
@@ -32,21 +33,21 @@ The application is **FULLY FUNCTIONAL** with real Earth Engine data integration.
 - **Source**: `ECMWF/ERA5/DAILY` from Google Earth Engine
 - **Parameter**: `mean_2m_air_temperature` (2-meter air temperature)
 - **Time Range**: 1979-2020 (ERA5 reanalysis data availability)
-- **Spatial Coverage**: Global, focused on Uttar Pradesh, India
+- **Spatial Coverage**: Global coverage with location-specific analysis
 - **Temporal Resolution**: Daily data aggregated to annual means
 - **Units**: Converted from Kelvin to Celsius (15°C to 45°C range)
 
 #### Visualization Details
 - **Color Palette**: 18-color gradient from blue (cool) to red (hot)
-- **Temperature Range**: 15°C (blue) to 45°C (red/magenta)
-- **Geographic Focus**: Uttar Pradesh boundaries (23.9°N to 29.3°N, 77.1°E to 84.6°E)
-- **Map Center**: Lucknow (26.8467°N, 80.9462°E)
+- **Temperature Range**: Climate-appropriate ranges based on location latitude
+- **Geographic Focus**: Dynamic boundaries based on selected location
+- **Map Center**: Automatically centers on selected location
 
 #### AI Training Data
-- **Source**: Local `data.js` file with historical temperature averages
+- **Source**: Location-specific climate data with latitude-based temperature estimation
 - **Time Range**: 1980-2023 (44 years of data)
-- **Purpose**: Train TensorFlow.js model for future predictions
-- **Predictions**: 2040, 2050, 2060 temperature forecasts
+- **Purpose**: Train TensorFlow.js model for location-specific future predictions
+- **Predictions**: 2040, 2050, 2060 temperature forecasts for selected location
 
 ## Prerequisites
 
@@ -135,6 +136,72 @@ google_maps_earth/
 - **APIs**: Google Earth Engine, Google Maps Platform
 - **AI/ML**: TensorFlow.js
 
+## 🚀 Deployment to Render
+
+### Quick Deploy
+
+1. **Run the deployment script**:
+   ```bash
+   ./deploy.sh
+   ```
+
+2. **Follow the deployment guide**:
+   - See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions
+
+3. **Your app will be live at**:
+   `https://your-app-name.onrender.com`
+
+### Manual Deployment Steps
+
+1. **Push to GitHub**: Ensure your code is in a GitHub repository
+2. **Create Render Service**: Go to [render.com](https://render.com) and create a new Web Service
+3. **Configure Settings**:
+   - Environment: Node
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+4. **Environment Variables**: Add `NODE_ENV=production`
+5. **Upload Service Account**: Upload `privatekey.json` as a secret file
+6. **Deploy**: Render will automatically build and deploy
+
+### Testing Deployment
+
+Visit these endpoints to verify your deployment:
+- **Health Check**: `https://your-app.onrender.com/health`
+- **Earth Engine Test**: `https://your-app.onrender.com/test-ee`
+- **Main Application**: `https://your-app.onrender.com/`
+- **Test Fixes**: `https://your-app.onrender.com/test-fixes`
+
+## 🧪 Testing & Quality Assurance
+
+### Recent Fixes Implemented
+
+All major issues have been resolved:
+- ✅ **Location Boundary Detection**: Temperature visualization now properly constrained to selected location boundaries
+- ✅ **Temperature Particle Constraints**: Particles bounce within location boundaries instead of wrapping around
+- ✅ **Wind Animation**: Working wind visualization in weather mode with fallback options
+- ✅ **Legend Overlap Prevention**: Clean legend switching without overlapping elements
+- ✅ **Immersive View Responsive**: Fully responsive UI/UX with proper mobile support
+
+### Test Pages
+
+- **`/test-fixes`**: Comprehensive testing for all implemented fixes
+- **`/test-global`**: Global location testing for different climate zones
+- **`/test`**: Basic Earth Engine connection testing
+
+## 📊 Performance & Monitoring
+
+### Production Optimizations
+- Server-side caching of Earth Engine data
+- Responsive design for all screen sizes
+- Error handling and fallback mechanisms
+- Health check endpoints for monitoring
+
+### Global Support
+- Works with any location worldwide (195+ countries)
+- Administrative boundary support (countries, states, cities)
+- Climate-appropriate temperature ranges based on latitude
+- Multiple fallback mechanisms for data availability
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
@@ -143,3 +210,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Google Earth Engine for climate data
 - Google Maps Platform for visualization capabilities
+- Render for reliable hosting and deployment

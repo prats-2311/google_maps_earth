@@ -1,4 +1,4 @@
-# Climate Visualization Usage Guide
+# Global Climate Visualization Usage Guide
 
 ## Quick Start
 
@@ -11,6 +11,9 @@
 2. **Open the Application**:
    Navigate to `http://localhost:3000` in your browser
 
+3. **Select a Location**:
+   Use the search bar to find and select any location worldwide for climate analysis
+
 ## Using the Historical Data (1979-2020)
 
 ### Time-Lapse Visualization
@@ -21,8 +24,8 @@
 
 ### What You'll See
 - **Temperature Overlay**: Color-coded temperature visualization on the map
-- **Color Scale**: Blue (cool, ~15°C) to Red/Magenta (hot, ~45°C)
-- **Geographic Focus**: Uttar Pradesh, India region
+- **Color Scale**: Climate-appropriate ranges based on location (Arctic: -30°C to 20°C, Tropical: 10°C to 50°C)
+- **Geographic Focus**: Automatically focuses on your selected location
 - **Real-time Loading**: Data fetched and displayed as you move the slider
 
 ### AI Predictions
@@ -40,7 +43,7 @@ The sidebar shows:
 - **Source**: ECMWF via Google Earth Engine
 - **Coverage**: 1979-2020 (41 years)
 - **Parameter**: Mean 2-meter Air Temperature
-- **Region**: Uttar Pradesh, India
+- **Region**: Selected location (global coverage)
 
 ## Testing Different Years
 

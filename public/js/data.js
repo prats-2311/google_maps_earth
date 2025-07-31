@@ -1,50 +1,67 @@
-// Historical temperature data for Uttar Pradesh (1979-2020)
-// This data aligns with ERA5 dataset availability from Google Earth Engine
+// Location-agnostic climate data structure for AI model training
+// This will be populated dynamically based on selected location
+// Data aligns with ERA5 dataset availability from Google Earth Engine (1979-2020)
 // Extended with recent estimates for AI model training (2021-2023)
-const historicalTemperatureData = [
-  { year: 1979, avgTemp: 25.0 },
-  { year: 1980, avgTemp: 25.1 },
-  { year: 1981, avgTemp: 25.2 },
-  { year: 1982, avgTemp: 25.0 },
-  { year: 1983, avgTemp: 25.3 },
-  { year: 1984, avgTemp: 25.1 },
-  { year: 1985, avgTemp: 25.4 },
-  { year: 1986, avgTemp: 25.3 },
-  { year: 1987, avgTemp: 25.5 },
-  { year: 1988, avgTemp: 25.4 },
-  { year: 1989, avgTemp: 25.6 },
-  { year: 1990, avgTemp: 25.7 },
-  { year: 1991, avgTemp: 25.6 },
-  { year: 1992, avgTemp: 25.5 },
-  { year: 1993, avgTemp: 25.8 },
-  { year: 1994, avgTemp: 25.7 },
-  { year: 1995, avgTemp: 25.9 },
-  { year: 1996, avgTemp: 26.0 },
-  { year: 1997, avgTemp: 26.1 },
-  { year: 1998, avgTemp: 26.3 },
-  { year: 1999, avgTemp: 26.2 },
-  { year: 2000, avgTemp: 26.4 },
-  { year: 2001, avgTemp: 26.3 },
-  { year: 2002, avgTemp: 26.5 },
-  { year: 2003, avgTemp: 26.6 },
-  { year: 2004, avgTemp: 26.4 },
-  { year: 2005, avgTemp: 26.7 },
-  { year: 2006, avgTemp: 26.8 },
-  { year: 2007, avgTemp: 26.9 },
-  { year: 2008, avgTemp: 26.7 },
-  { year: 2009, avgTemp: 27.0 },
-  { year: 2010, avgTemp: 27.2 },
-  { year: 2011, avgTemp: 27.1 },
-  { year: 2012, avgTemp: 27.3 },
-  { year: 2013, avgTemp: 27.2 },
-  { year: 2014, avgTemp: 27.4 },
-  { year: 2015, avgTemp: 27.6 },
-  { year: 2016, avgTemp: 27.8 },
-  { year: 2017, avgTemp: 27.7 },
-  { year: 2018, avgTemp: 27.9 },
-  { year: 2019, avgTemp: 28.1 },
-  { year: 2020, avgTemp: 28.0 },
-  { year: 2021, avgTemp: 28.2 },
-  { year: 2022, avgTemp: 28.3 },
-  { year: 2023, avgTemp: 28.5 }
-];
+let locationSpecificData = {};
+
+// Generate fallback/default temperature data for AI training when no cached data is available
+// This uses global temperature anomaly trends as a baseline
+function generateFallbackTemperatureData(baseTemp = 20) {
+  const data = [];
+  for (let year = 1979; year <= 2023; year++) {
+    // Apply realistic warming trend: ~0.02°C per year based on global climate data
+    const warming = (year - 1979) * 0.02;
+    // Add some natural variability (±1°C)
+    const variation = (Math.sin((year - 1979) * 0.5) * 0.5) + (Math.random() - 0.5) * 0.8;
+    const avgTemp = baseTemp + warming + variation;
+    data.push({ year: year, avgTemp: Math.round(avgTemp * 10) / 10 });
+  }
+  return data;
+}
+
+// Default global temperature data structure
+const historicalTemperatureData = generateFallbackTemperatureData();
+
+// Function to get location-specific climate data
+function getLocationClimateData(locationKey, lat = null) {
+  if (locationSpecificData[locationKey]) {
+    return locationSpecificData[locationKey];
+  }
+  
+  // Generate location-appropriate baseline temperature based on latitude
+  let baseTemp = 20; // Default global average
+  if (lat !== null) {
+    baseTemp = estimateBaseTemperatureFromLatitude(lat);
+  }
+  
+  return generateFallbackTemperatureData(baseTemp);
+}
+
+// Function to store location-specific data from Earth Engine results
+function storeLocationClimateData(locationKey, climateData) {
+  locationSpecificData[locationKey] = climateData;
+}
+
+// Estimate baseline temperature based on latitude for more realistic fallback data
+function estimateBaseTemperatureFromLatitude(lat) {
+  const absLat = Math.abs(lat);
+  
+  if (absLat >= 60) {
+    // Arctic/Antarctic regions
+    return Math.max(-10, 5 - (absLat - 60) * 0.5);
+  } else if (absLat >= 45) {
+    // Temperate/Subarctic regions
+    return 15 - (absLat - 45) * 0.3;
+  } else if (absLat >= 23.5) {
+    // Temperate regions
+    return 20 - (absLat - 23.5) * 0.2;
+  } else {
+    // Tropical/Subtropical regions
+    return 26 - absLat * 0.1;
+  }
+}
+
+// Function to clear location data cache
+function clearLocationDataCache() {
+  locationSpecificData = {};
+}

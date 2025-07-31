@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualization Fixes Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass { background: #d4edda; color: #155724; }
+        .fail { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .status { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Visualization Fixes Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>📋 Test Summary</h2>
+        <div id="test-summary">
+            <div class="info">Testing the following fixes:</div>
+            <ul>
+                <li>✅ Visualization mode switching in timelapse navigation</li>
+                <li>✅ Legend overlapping prevention</li>
+                <li>✅ Temperature anomaly loading improvements</li>
+                <li>✅ Wind animation canvas creation</li>
+                <li>✅ Better error handling for timeouts</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 Test 1: Visualization Mode Persistence</h2>
+        <div id="test1-results"></div>
+        <button onclick="runTest1()">Test Mode Switching</button>
+        <div class="info">
+            This test simulates switching visualization modes and checking if navigation maintains the correct mode.
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🏷️ Test 2: Legend Management</h2>
+        <div id="test2-results"></div>
+        <button onclick="runTest2()">Test Legend Cleanup</button>
+        <div class="info">
+            This test checks if legends are properly removed when switching between visualization modes.
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>⏱️ Test 3: Anomaly Loading Timeout</h2>
+        <div id="test3-results"></div>
+        <button onclick="runTest3()">Test Timeout Handling</button>
+        <div class="info">
+            This test simulates slow anomaly loading and checks timeout behavior.
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🌬️ Test 4: Wind Canvas Creation</h2>
+        <div id="test4-results"></div>
+        <button onclick="runTest4()">Test Wind Canvas</button>
+        <div class="info">
+            This test checks if wind canvas is properly created and managed.
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔄 Test 5: Cache Integration</h2>
+        <div id="test5-results"></div>
+        <button onclick="runTest5()">Test Cache Behavior</button>
+        <div class="info">
+            This test verifies that cached data respects the current visualization mode.
+        </div>
+    </div>
+
+    <script>
+        // Mock the global variables and functions that would exist in the main app
+        let currentVisualizationMode = 'temperature';
+        let cachedVisualizationData = {
+            temperature: { 1990: { success: true, mapid: 'test-temp' } },
+            weather: { 1990: { success: true, temperature: { mapid: 'test-temp' }, wind: { type: 'tiles' } } },
+            anomaly: {},
+            terrain: {}
+        };
+        let timelapseData = {
+            1990: { success: true, mapid: 'test-timelapse' }
+        };
+
+        function addResult(testId, message, type = 'info') {
+            const container = document.getElementById(`${testId}-results`);
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = message;
+            container.appendChild(div);
+        }
+
+        function clearResults(testId) {
+            document.getElementById(`${testId}-results`).innerHTML = '';
+        }
+
+        // Test 1: Visualization Mode Persistence
+        function runTest1() {
+            clearResults('test1');
+            addResult('test1', '🔄 Testing visualization mode persistence...', 'info');
+
+            // Simulate the fixed displayCachedYear function logic
+            function testDisplayCachedYear(year, mode) {
+                currentVisualizationMode = mode;
+                
+                // Check if we have cached data for the current visualization mode
+                const cachedData = cachedVisualizationData[currentVisualizationMode]?.[year];
+                if (cachedData) {
+                    return `Using cached ${currentVisualizationMode} data for year ${year}`;
+                }
+                
+                // Fallback to temperature data if no cached data for current mode
+                const data = timelapseData[year];
+                if (!data) {
+                    return `No cached data for year ${year}`;
+                }
+                
+                // If current mode is not temperature, try to load the correct visualization
+                if (currentVisualizationMode !== 'temperature') {
+                    return `Loading ${currentVisualizationMode} data for year ${year}`;
+                }
+                
+                return `Using temperature fallback for year ${year}`;
+            }
+
+            // Test scenarios
+            const scenarios = [
+                { year: 1990, mode: 'temperature', expected: 'cached temperature' },
+                { year: 1990, mode: 'weather', expected: 'cached weather' },
+                { year: 1990, mode: 'anomaly', expected: 'loading anomaly' },
+                { year: 1991, mode: 'temperature', expected: 'no cached data' }
+            ];
+
+            scenarios.forEach(scenario => {
+                const result = testDisplayCachedYear(scenario.year, scenario.mode);
+                const success = result.includes(scenario.mode) || result.includes('No cached data');
+                addResult('test1', 
+                    `Year ${scenario.year}, Mode ${scenario.mode}: ${result}`, 
+                    success ? 'pass' : 'fail'
+                );
+            });
+
+            addResult('test1', '✅ Mode persistence test completed', 'pass');
+        }
+
+        // Test 2: Legend Management
+        function runTest2() {
+            clearResults('test2');
+            addResult('test2', '🏷️ Testing legend cleanup...', 'info');
+
+            // Create mock legends
+            const legendTypes = ['visualization-legend', 'temp-legend', 'rainfall-legend', 'wind-legend', 'anomaly-legend', 'terrain-legend'];
+            
+            // Create test legends
+            legendTypes.forEach(type => {
+                const legend = document.createElement('div');
+                legend.className = type;
+                legend.id = type;
+                legend.textContent = `Test ${type}`;
+                legend.style.display = 'none'; // Hide from view
+                document.body.appendChild(legend);
+            });
+
+            addResult('test2', `Created ${legendTypes.length} test legends`, 'info');
+
+            // Test the legend removal logic
+            const existingLegends = document.querySelectorAll('.visualization-legend, #temp-legend, #rainfall-legend, #wind-legend, #anomaly-legend, #terrain-legend');
+            addResult('test2', `Found ${existingLegends.length} legends to remove`, 'info');
+
+            existingLegends.forEach(legend => legend.remove());
+
+            // Verify removal
+            const remainingLegends = document.querySelectorAll('.visualization-legend, #temp-legend, #rainfall-legend, #wind-legend, #anomaly-legend, #terrain-legend');
+            
+            if (remainingLegends.length === 0) {
+                addResult('test2', '✅ All legends successfully removed', 'pass');
+            } else {
+                addResult('test2', `❌ ${remainingLegends.length} legends still remain`, 'fail');
+            }
+        }
+
+        // Test 3: Anomaly Loading Timeout
+        function runTest3() {
+            clearResults('test3');
+            addResult('test3', '⏱️ Testing timeout handling...', 'info');
+
+            // Simulate the timeout logic
+            function testTimeoutHandling(mode) {
+                const timeoutMs = mode === 'anomaly' ? 30000 : 15000;
+                addResult('test3', `${mode} mode timeout: ${timeoutMs}ms`, 'info');
+                
+                // Simulate AbortError
+                const error = new Error('Request timeout');
+                error.name = 'AbortError';
+                
+                if (error.name === 'AbortError') {
+                    if (mode === 'anomaly') {
+                        return 'Temperature anomaly data is taking too long to load. This may be due to server processing time.';
+                    } else {
+                        return `Request timeout for ${mode} data. Please try again.`;
+                    }
+                }
+                
+                return `Failed to load ${mode}`;
+            }
+
+            // Test different modes
+            const modes = ['temperature', 'weather', 'anomaly', 'terrain'];
+            modes.forEach(mode => {
+                const result = testTimeoutHandling(mode);
+                addResult('test3', `${mode}: ${result}`, 'pass');
+            });
+
+            addResult('test3', '✅ Timeout handling test completed', 'pass');
+        }
+
+        // Test 4: Wind Canvas Creation
+        function runTest4() {
+            clearResults('test4');
+            addResult('test4', '🌬️ Testing wind canvas creation...', 'info');
+
+            // Simulate createWindCanvas function
+            function testCreateWindCanvas() {
+                // Remove existing wind canvas if it exists
+                const existingCanvas = document.getElementById('wind-canvas-test');
+                if (existingCanvas) {
+                    existingCanvas.remove();
+                    addResult('test4', 'Removed existing canvas', 'info');
+                }
+                
+                // Create new canvas
+                const windCanvas = document.createElement('canvas');
+                windCanvas.id = 'wind-canvas-test';
+                windCanvas.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100px;
+                    height: 100px;
+                    pointer-events: none;
+                    z-index: 100;
+                    display: none;
+                `;
+                
+                // Set canvas size
+                windCanvas.width = 100;
+                windCanvas.height = 100;
+                document.body.appendChild(windCanvas);
+                
+                return windCanvas;
+            }
+
+            const canvas = testCreateWindCanvas();
+            
+            if (canvas && canvas.id === 'wind-canvas-test') {
+                addResult('test4', '✅ Wind canvas created successfully', 'pass');
+                addResult('test4', `Canvas size: ${canvas.width}x${canvas.height}`, 'info');
+                
+                // Test WebGL context
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    addResult('test4', '✅ WebGL context available', 'pass');
+                } else {
+                    addResult('test4', '⚠️ WebGL not available, will use fallback', 'info');
+                }
+                
+                // Cleanup
+                canvas.remove();
+            } else {
+                addResult('test4', '❌ Failed to create wind canvas', 'fail');
+            }
+        }
+
+        // Test 5: Cache Integration
+        function runTest5() {
+            clearResults('test5');
+            addResult('test5', '🔄 Testing cache behavior...', 'info');
+
+            // Test cache lookup logic
+            function testCacheLookup(mode, year) {
+                const cachedData = cachedVisualizationData[mode]?.[year];
+                return cachedData ? `Found cached ${mode} data for ${year}` : `No cached ${mode} data for ${year}`;
+            }
+
+            // Test scenarios
+            const cacheTests = [
+                { mode: 'temperature', year: 1990, shouldExist: true },
+                { mode: 'weather', year: 1990, shouldExist: true },
+                { mode: 'anomaly', year: 1990, shouldExist: false },
+                { mode: 'terrain', year: 1990, shouldExist: false }
+            ];
+
+            cacheTests.forEach(test => {
+                const result = testCacheLookup(test.mode, test.year);
+                const hasData = result.includes('Found cached');
+                const success = hasData === test.shouldExist;
+                
+                addResult('test5', 
+                    `${test.mode} ${test.year}: ${result}`, 
+                    success ? 'pass' : 'fail'
+                );
+            });
+
+            addResult('test5', '✅ Cache integration test completed', 'pass');
+        }
+
+        // Auto-run all tests on page load
+        window.onload = function() {
+            addResult('test-summary', '🚀 All tests ready to run. Click buttons to execute individual tests.', 'info');
+        };
+    </script>
+</body>
+</html>

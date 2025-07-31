@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Climate Visualization - Uttar Pradesh</title>
+    <title>Global Climate Visualization</title>
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
@@ -24,25 +24,109 @@
 <body>
     <div class="container">
         <div class="sidebar">
-            <h1>Climate Visualization</h1>
-            <h2>Uttar Pradesh, India</h2>
+            <h1>Global Climate Visualization</h1>
+            <div id="location-search-section">
+                <h2>Select Location</h2>
+                <div class="location-search-container">
+                    <input type="text" id="location-search" placeholder="Search for any location worldwide..." autocomplete="off">
+                    <button id="search-location-btn">🔍 Search</button>
+                </div>
+                <div id="current-location" class="current-location">
+                    <strong>Current:</strong> <span id="current-location-name">No location selected</span>
+                </div>
+            </div>
             
             <div class="control-panel">
                 <div class="time-lapse-controls">
                     <h3>Historical Temperature</h3>
+                    
+                    <!-- Progress Loading Section -->
+                    <div id="bulk-loading-section">
+                        <button id="load-all-data-btn">Load All Historical Data (1979-2020)</button>
+                        <div id="loading-progress" class="hidden">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="progress-percentage">0%</span>
+                                <span id="progress-status">Preparing...</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Cache Status Display -->
+                        <div id="cache-status" class="cache-status hidden">
+                            <h4>📊 Cached Data Status</h4>
+                            <div class="cache-grid">
+                                <div class="cache-item">
+                                    <span class="cache-label">🌡️ Temperature:</span>
+                                    <span id="cache-temp-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">🌦️ Weather:</span>
+                                    <span id="cache-weather-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">📈 Anomaly:</span>
+                                    <span id="cache-anomaly-count">0</span> years
+                                </div>
+                                <div class="cache-item">
+                                    <span class="cache-label">🏔️ Terrain:</span>
+                                    <span id="cache-terrain-count">0</span> years
+                                </div>
+                            </div>
+                            <div class="cache-total">
+                                Total: <span id="cache-total-operations">0</span> datasets cached
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Year Range Selection -->
+                    <div class="year-range-controls">
+                        <label for="start-year">Start Year:</label>
+                        <input type="number" id="start-year" min="1979" max="2020" value="1979">
+                        
+                        <label for="end-year">End Year:</label>
+                        <input type="number" id="end-year" min="1979" max="2020" value="2020">
+                    </div>
+                    
+                    <div class="quick-range-buttons">
+                        <button onclick="setQuickRange(1979, 2020)" class="quick-range-btn">Full Range (42 years)</button>
+                        <button onclick="setQuickRange(1990, 2000)" class="quick-range-btn">Test Range (11 years)</button>
+                        <button onclick="setQuickRange(2010, 2020)" class="quick-range-btn">Recent Decade</button>
+                    </div>
+                    
+                    <!-- User-Controlled Time-lapse Navigation -->
+                    <div id="timelapse-controls" class="hidden">
+                        <div class="timelapse-header">
+                            <h4>🎬 Time-lapse Navigator</h4>
+                            <div id="timelapse-year-display">Year: <span id="timelapse-current-year">1979</span></div>
+                            <div id="timelapse-progress">Year <span id="timelapse-year-index">1</span> of <span id="timelapse-total-years">42</span></div>
+                        </div>
+                        
+                        <div class="timelapse-navigation">
+                            <button id="timelapse-start-btn" title="Go to first year">⏮️ First</button>
+                            <button id="timelapse-prev-btn" title="Previous year">⏪ Previous</button>
+                            <button id="timelapse-next-btn" title="Next year">⏩ Next</button>
+                            <button id="timelapse-end-btn" title="Go to last year">⏭️ Last</button>
+                        </div>
+                        
+                        <div class="timelapse-quick-jump">
+                            <label for="timelapse-jump-year">Quick Jump:</label>
+                            <select id="timelapse-jump-year">
+                                <option value="">Select Year...</option>
+                            </select>
+                            <button id="timelapse-jump-btn">Go</button>
+                        </div>
+                        
+                        <div class="timelapse-actions">
+                            <button id="timelapse-exit-btn">❌ Exit Time-lapse</button>
+                            <button id="timelapse-auto-play-btn">🎬 Auto Play</button>
+                        </div>
+                    </div>
+                    
                     <div class="slider-container">
                         <label for="year-slider">Year: <span id="selected-year">2000</span></label>
                         <input type="range" id="year-slider" min="1979" max="2020" value="2000">
-                        <div class="data-availability-note">
-                            <small>Real ERA5 climate data available: 1979-2020 (41 years)</small>
-                        </div>
-                    </div>
-                    <div class="legend">
-                        <div class="legend-gradient"></div>
-                        <div class="legend-labels">
-                            <span>15°C</span>
-                            <span>45°C</span>
-                        </div>
                     </div>
                 </div>
                 
@@ -50,6 +134,9 @@
                     <h3>Future Prediction</h3>
                     <button id="predict-btn">Predict Future Temperatures</button>
                     <div id="prediction-results" class="hidden">
+                        <div class="prediction-location">
+                            <strong>Predictions for:</strong> <span id="prediction-location-name">Select a location</span>
+                        </div>
                         <div class="prediction-item">
                             <span class="year">2040:</span>
                             <span id="temp-2040" class="temp"></span>
@@ -101,7 +188,7 @@
                         <strong>Parameter:</strong> Mean 2m Air Temperature
                     </div>
                     <div class="info-item">
-                        <strong>Region:</strong> Uttar Pradesh, India
+                        <strong>Region:</strong> <span id="data-info-region">Select a location to view data</span>
                     </div>
                 </div>
             </div>
@@ -140,7 +227,11 @@
        - Distance Matrix API
     4. Create an API key and replace the placeholder below
     -->
-    <!-- Load data and app scripts first -->
+    <!-- Load wind-gl library for wind visualization -->
+    <script src="https://unpkg.com/mapbox-gl@2.0.0/dist/mapbox-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mapbox/webgl-wind@master/dist/wind-gl.js"></script>
+    
+    <!-- Load data and app scripts -->
     <script src="js/data.js"></script>
     <script src="js/app.js"></script>
     <!-- Load Google Maps API with proper async loading -->
@@ -148,10 +239,14 @@
       // Global callback function for Google Maps
       window.initGoogleMaps = function() {
         console.log('Google Maps API loaded via callback');
-        if (typeof initMap === 'function') {
-          initMap();
+        if (typeof window.initMap === 'function') {
+          window.initMap();
         } else {
           console.error('initMap function not found');
+          // Fallback - try calling initMapInternal directly
+          if (typeof window.initMapInternal === 'function') {
+            window.initMapInternal();
+          }
         }
       };
       

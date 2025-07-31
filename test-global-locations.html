@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Location Test - Climate Visualization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-location {
+            display: inline-block;
+            margin: 5px;
+            padding: 8px 12px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .test-location:hover {
+            background: #1557b0;
+        }
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .success { border-left: 4px solid #34a853; }
+        .error { border-left: 4px solid #ea4335; }
+        .info { border-left: 4px solid #1a73e8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌍 Global Location Test</h1>
+        <p>This page tests the location-agnostic functionality of the climate visualization application.</p>
+        
+        <div class="test-section">
+            <h2>Test Different Climate Zones</h2>
+            <p>Click on any location to test climate data loading for different regions:</p>
+            
+            <h3>🏔️ Arctic/Subarctic</h3>
+            <a href="/?location=Reykjavik, Iceland" class="test-location">Reykjavik, Iceland</a>
+            <a href="/?location=Anchorage, Alaska" class="test-location">Anchorage, Alaska</a>
+            <a href="/?location=Murmansk, Russia" class="test-location">Murmansk, Russia</a>
+            
+            <h3>🌲 Temperate</h3>
+            <a href="/?location=London, UK" class="test-location">London, UK</a>
+            <a href="/?location=New York, USA" class="test-location">New York, USA</a>
+            <a href="/?location=Berlin, Germany" class="test-location">Berlin, Germany</a>
+            <a href="/?location=Tokyo, Japan" class="test-location">Tokyo, Japan</a>
+            
+            <h3>🏜️ Arid/Desert</h3>
+            <a href="/?location=Phoenix, Arizona" class="test-location">Phoenix, Arizona</a>
+            <a href="/?location=Cairo, Egypt" class="test-location">Cairo, Egypt</a>
+            <a href="/?location=Alice Springs, Australia" class="test-location">Alice Springs, Australia</a>
+            
+            <h3>🌴 Tropical</h3>
+            <a href="/?location=Singapore" class="test-location">Singapore</a>
+            <a href="/?location=Mumbai, India" class="test-location">Mumbai, India</a>
+            <a href="/?location=Miami, Florida" class="test-location">Miami, Florida</a>
+            <a href="/?location=Bangkok, Thailand" class="test-location">Bangkok, Thailand</a>
+            
+            <h3>🌊 Oceanic</h3>
+            <a href="/?location=Honolulu, Hawaii" class="test-location">Honolulu, Hawaii</a>
+            <a href="/?location=Auckland, New Zealand" class="test-location">Auckland, New Zealand</a>
+            <a href="/?location=Azores, Portugal" class="test-location">Azores, Portugal</a>
+        </div>
+        
+        <div class="test-section">
+            <h2>🧪 API Endpoint Tests</h2>
+            <p>Test the server endpoints with different locations:</p>
+            <button onclick="testEndpoint('London, UK', 51.5074, -0.1278)">Test London</button>
+            <button onclick="testEndpoint('Tokyo, Japan', 35.6762, 139.6503)">Test Tokyo</button>
+            <button onclick="testEndpoint('Sydney, Australia', -33.8688, 151.2093)">Test Sydney</button>
+            <button onclick="testEndpoint('Cairo, Egypt', 30.0444, 31.2357)">Test Cairo</button>
+            
+            <div id="test-results"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>📊 Expected Temperature Ranges</h2>
+            <div class="result info">
+                <strong>Arctic (60°+ latitude):</strong> -30°C to 20°C<br>
+                <strong>Temperate (23.5° to 60° latitude):</strong> -10°C to 45°C<br>
+                <strong>Tropical (0° to 23.5° latitude):</strong> 10°C to 50°C<br>
+                <strong>Desert regions:</strong> 0°C to 60°C
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🔗 Quick Links</h2>
+            <a href="/" class="test-location">Main Application</a>
+            <a href="/test" class="test-location">Basic Test Page</a>
+            <a href="/debug.html" class="test-location">Debug Page</a>
+        </div>
+    </div>
+
+    <script>
+        async function testEndpoint(locationName, lat, lng) {
+            const resultsDiv = document.getElementById('test-results');
+            const testYear = 2000;
+            
+            // Add loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'result info';
+            loadingDiv.innerHTML = `🔄 Testing ${locationName}...`;
+            resultsDiv.appendChild(loadingDiv);
+            
+            try {
+                const params = new URLSearchParams({
+                    year: testYear,
+                    location: locationName,
+                    lat: lat.toString(),
+                    lng: lng.toString()
+                });
+                
+                const response = await fetch(`/ee-temp-layer?${params.toString()}`);
+                const data = await response.json();
+                
+                // Remove loading indicator
+                resultsDiv.removeChild(loadingDiv);
+                
+                // Add result
+                const resultDiv = document.createElement('div');
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        ✅ <strong>${locationName}</strong> - Success<br>
+                        Year: ${data.year || testYear}<br>
+                        Map ID: ${data.mapid ? 'Generated' : 'N/A'}<br>
+                        Simulated: ${data.simulated ? 'Yes' : 'No'}
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        ❌ <strong>${locationName}</strong> - Error<br>
+                        ${data.error || 'Unknown error'}
+                    `;
+                }
+                resultsDiv.appendChild(resultDiv);
+                
+            } catch (error) {
+                // Remove loading indicator
+                resultsDiv.removeChild(loadingDiv);
+                
+                // Add error result
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'result error';
+                errorDiv.innerHTML = `
+                    ❌ <strong>${locationName}</strong> - Network Error<br>
+                    ${error.message}
+                `;
+                resultsDiv.appendChild(errorDiv);
+            }
+        }
+        
+        // Auto-test functionality on page load
+        window.addEventListener('load', function() {
+            console.log('Global location test page loaded');
+            console.log('Application is now location-agnostic and supports worldwide climate visualization');
+        });
+    </script>
+</body>
+</html>
