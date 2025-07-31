@@ -29,11 +29,18 @@ app.get('/favicon.ico', (req, res) => {
 
 // Health check endpoint for Render
 app.get('/health', (req, res) => {
+  const isEEAuthenticated = !!ee.data.getAuthToken();
+  
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    earthEngine: {
+      authenticated: isEEAuthenticated,
+      hasEnvironmentKey: !!process.env.GOOGLE_EARTH_ENGINE_KEY,
+      authMethod: process.env.GOOGLE_EARTH_ENGINE_KEY ? 'environment_variable' : 'local_file'
+    }
   });
 });
 
@@ -61,15 +68,40 @@ app.get('/test-fixes', (req, res) => {
  * 2. Enable the Earth Engine API for your project
  * 3. Create a service account with the "Earth Engine Resource Admin" role
  * 4. Generate a JSON key file for this service account
- * 5. Save the key file as 'privatekey.json' in the root directory of this project
- * 6. Register your service account for Earth Engine access at https://signup.earthengine.google.com/#!/service_accounts
+ * 5. For local development: Save the key file as 'privatekey.json' in the root directory
+ * 6. For production deployment: Set the GOOGLE_EARTH_ENGINE_KEY environment variable 
+ *    with the entire JSON key content as a string
+ * 7. Register your service account for Earth Engine access at https://signup.earthengine.google.com/#!/service_accounts
  */
 
 // Initialize Earth Engine with the private key
 function initializeEarthEngine() {
   try {
-    const privateKey = require('./privatekey.json');
-    console.log('Private key loaded successfully');
+    let privateKey;
+    
+    // Try to load from environment variable first (for production)
+    if (process.env.GOOGLE_EARTH_ENGINE_KEY) {
+      console.log('Loading private key from environment variable');
+      try {
+        privateKey = JSON.parse(process.env.GOOGLE_EARTH_ENGINE_KEY);
+        console.log('Private key loaded from environment variable successfully');
+      } catch (parseError) {
+        console.error('Error parsing private key from environment variable:', parseError);
+        return;
+      }
+    } else {
+      // Fallback to local file (for development)
+      console.log('Loading private key from local file');
+      try {
+        privateKey = require('./privatekey.json');
+        console.log('Private key loaded from file successfully');
+      } catch (fileError) {
+        console.error('Error loading private key from file:', fileError);
+        console.error('For production deployment, set the GOOGLE_EARTH_ENGINE_KEY environment variable');
+        console.error('For local development, ensure privatekey.json exists in the root directory');
+        return;
+      }
+    }
     
     ee.data.authenticateViaPrivateKey(privateKey, () => {
       console.log('Authentication successful');
@@ -82,7 +114,7 @@ function initializeEarthEngine() {
       console.error('Authentication failed', err);
     });
   } catch (error) {
-    console.error('Error loading private key:', error);
+    console.error('Error in initializeEarthEngine:', error);
   }
 }
 
