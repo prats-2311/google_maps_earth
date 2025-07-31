@@ -1,0 +1,18 @@
+# Render Blueprint for Climate Visualization App
+services:
+  - type: web
+    name: climate-visualization
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromService:
+          type: web
+          name: climate-visualization
+          property: port
+    # You'll need to add your Google Earth Engine service account key
+    # as a secret file in Render dashboard

@@ -136,6 +136,72 @@ google_maps_earth/
 - **APIs**: Google Earth Engine, Google Maps Platform
 - **AI/ML**: TensorFlow.js
 
+## 🚀 Deployment to Render
+
+### Quick Deploy
+
+1. **Run the deployment script**:
+   ```bash
+   ./deploy.sh
+   ```
+
+2. **Follow the deployment guide**:
+   - See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions
+
+3. **Your app will be live at**:
+   `https://your-app-name.onrender.com`
+
+### Manual Deployment Steps
+
+1. **Push to GitHub**: Ensure your code is in a GitHub repository
+2. **Create Render Service**: Go to [render.com](https://render.com) and create a new Web Service
+3. **Configure Settings**:
+   - Environment: Node
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+4. **Environment Variables**: Add `NODE_ENV=production`
+5. **Upload Service Account**: Upload `privatekey.json` as a secret file
+6. **Deploy**: Render will automatically build and deploy
+
+### Testing Deployment
+
+Visit these endpoints to verify your deployment:
+- **Health Check**: `https://your-app.onrender.com/health`
+- **Earth Engine Test**: `https://your-app.onrender.com/test-ee`
+- **Main Application**: `https://your-app.onrender.com/`
+- **Test Fixes**: `https://your-app.onrender.com/test-fixes`
+
+## 🧪 Testing & Quality Assurance
+
+### Recent Fixes Implemented
+
+All major issues have been resolved:
+- ✅ **Location Boundary Detection**: Temperature visualization now properly constrained to selected location boundaries
+- ✅ **Temperature Particle Constraints**: Particles bounce within location boundaries instead of wrapping around
+- ✅ **Wind Animation**: Working wind visualization in weather mode with fallback options
+- ✅ **Legend Overlap Prevention**: Clean legend switching without overlapping elements
+- ✅ **Immersive View Responsive**: Fully responsive UI/UX with proper mobile support
+
+### Test Pages
+
+- **`/test-fixes`**: Comprehensive testing for all implemented fixes
+- **`/test-global`**: Global location testing for different climate zones
+- **`/test`**: Basic Earth Engine connection testing
+
+## 📊 Performance & Monitoring
+
+### Production Optimizations
+- Server-side caching of Earth Engine data
+- Responsive design for all screen sizes
+- Error handling and fallback mechanisms
+- Health check endpoints for monitoring
+
+### Global Support
+- Works with any location worldwide (195+ countries)
+- Administrative boundary support (countries, states, cities)
+- Climate-appropriate temperature ranges based on latitude
+- Multiple fallback mechanisms for data availability
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
@@ -144,3 +210,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Google Earth Engine for climate data
 - Google Maps Platform for visualization capabilities
+- Render for reliable hosting and deployment

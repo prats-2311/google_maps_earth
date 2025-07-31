@@ -5,12 +5,36 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Production optimizations
+if (process.env.NODE_ENV === 'production') {
+  // Trust proxy for Render
+  app.set('trust proxy', 1);
+  
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+}
+
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Route for favicon to prevent 404 errors
 app.get('/favicon.ico', (req, res) => {
   res.status(204).send(); // No content response
+});
+
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Route for the test page
