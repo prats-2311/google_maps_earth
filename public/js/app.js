@@ -224,10 +224,10 @@ function initializeLocationSearch() {
     }
   });
   
-  // Enable autocomplete
+  // Enable autocomplete with more specific types for better boundary detection
   const autocomplete = new google.maps.places.Autocomplete(searchInput, {
-    types: ['(regions)'], // Focus on regions, countries, states, cities
-    fields: ['name', 'geometry', 'place_id', 'formatted_address']
+    types: ['administrative_area_level_1', 'administrative_area_level_2', 'country', 'locality'], // More specific administrative areas
+    fields: ['name', 'geometry', 'place_id', 'formatted_address', 'address_components', 'types']
   });
   
   autocomplete.addListener('place_changed', function() {
@@ -251,10 +251,10 @@ function performLocationSearch() {
   console.log(`Searching for location: ${query}`);
   showLoadingSpinner('Searching for location...');
   
-  // Use Places service to search
+  // Use Places service to search with more detailed fields
   const request = {
     query: query,
-    fields: ['name', 'geometry', 'place_id', 'formatted_address']
+    fields: ['name', 'geometry', 'place_id', 'formatted_address', 'address_components', 'types']
   };
   
   placesService.textSearch(request, (results, status) => {
@@ -277,17 +277,46 @@ function setCurrentLocation(place) {
   const bounds = place.geometry.viewport;
   const location = place.geometry.location;
   
+  // Create more appropriate bounds based on place type
+  let adjustedBounds = null;
+  if (bounds) {
+    const center = location;
+    const lat = center.lat();
+    const lng = center.lng();
+    
+    // Determine appropriate boundary size based on place type
+    let boundarySize = 0.5; // Default ~50km radius
+    
+    if (place.types) {
+      if (place.types.includes('country')) {
+        boundarySize = 5.0; // Large area for countries
+      } else if (place.types.includes('administrative_area_level_1')) {
+        boundarySize = 2.0; // Medium area for states/provinces
+      } else if (place.types.includes('administrative_area_level_2')) {
+        boundarySize = 1.0; // Smaller area for counties/districts
+      } else if (place.types.includes('locality')) {
+        boundarySize = 0.3; // Small area for cities
+      }
+    }
+    
+    // Create square bounds around the center point
+    adjustedBounds = {
+      north: lat + boundarySize,
+      south: lat - boundarySize,
+      east: lng + boundarySize,
+      west: lng - boundarySize
+    };
+    
+    console.log(`Adjusted boundary size: ${boundarySize}° for place types:`, place.types);
+  }
+  
   // Update current location
   currentLocation = {
     name: place.formatted_address || place.name,
     lat: location.lat(),
     lon: location.lng(),
-    bounds: bounds ? {
-      north: bounds.getNorthEast().lat(),
-      south: bounds.getSouthWest().lat(),
-      east: bounds.getNorthEast().lng(),
-      west: bounds.getSouthWest().lng()
-    } : null
+    bounds: adjustedBounds,
+    placeTypes: place.types || []
   };
   
   console.log('Current location set to:', currentLocation);
@@ -1032,17 +1061,23 @@ function showImmersiveView() {
   const currentYear = parseInt(document.getElementById('year-slider').value);
   const currentTemp = getCurrentTemperatureData(currentYear);
   
+  // Check if location is selected
+  if (!currentLocation.name) {
+    alert('Please select a location first to view immersive impact');
+    return;
+  }
+  
   immersiveContent.innerHTML = `
     <div class="immersive-dashboard">
       <div class="immersive-header">
         <h1>🌡️ Climate Impact Visualization</h1>
-        <h2>${currentLocation.name || 'Select Location'} - Year ${currentYear}</h2>
+        <h2>${currentLocation.name} - Year ${currentYear}</h2>
       </div>
       
       <div class="immersive-content-grid">
         <!-- Main Temperature Visualization -->
         <div class="immersive-main-viz">
-          <div id="immersive-map" style="width: 100%; height: 400px; border-radius: 12px;"></div>
+          <div id="immersive-map" style="width: 100%; height: 300px; min-height: 250px; border-radius: 12px;"></div>
           <div class="temperature-overlay">
             <div class="temp-reading">
               <span class="temp-value">${currentTemp.avg}°C</span>
@@ -2724,9 +2759,25 @@ function createEnhancedSimulatedParticles(width, height, year) {
     
     const realTemp = location.baseTemp + yearOffset + seasonalVariation + urbanHeatIsland;
     
+    // Convert geographic coordinates to canvas coordinates based on current location bounds
+    let x, y;
+    if (currentLocation.bounds) {
+      const bounds = currentLocation.bounds;
+      const latRange = bounds.north - bounds.south;
+      const lngRange = bounds.east - bounds.west;
+      
+      // Map location coordinates to canvas coordinates within bounds
+      x = ((location.lon - bounds.west) / lngRange) * width * 0.8 + width * 0.1;
+      y = ((bounds.north - location.lat) / latRange) * height * 0.8 + height * 0.1;
+    } else {
+      // Fallback to center area if no bounds
+      x = width * 0.3 + Math.random() * width * 0.4;
+      y = height * 0.3 + Math.random() * height * 0.4;
+    }
+    
     return {
-      x: ((location.lon - 77) / 6) * width + width * 0.3,
-      y: ((28 - location.lat) / 6) * height + height * 0.3,
+      x: Math.max(50, Math.min(width - 50, x)), // Ensure particles stay within canvas bounds
+      y: Math.max(50, Math.min(height - 50, y)),
       vx: (Math.random() - 0.5) * 1,
       vy: (Math.random() - 0.5) * 1,
       size: Math.max(2, Math.min(6, realTemp / 8)),
@@ -2741,11 +2792,23 @@ function createEnhancedSimulatedParticles(width, height, year) {
     const baseTemp = 26 + (year - 1980) * 0.03;
     const randomTemp = baseTemp + (Math.random() - 0.5) * 8;
     
+    // Generate random positions within the constrained area
+    let x, y;
+    if (currentLocation.bounds) {
+      // Keep particles within 80% of canvas area with 10% margin on each sides
+      x = width * 0.1 + Math.random() * width * 0.8;
+      y = height * 0.1 + Math.random() * height * 0.8;
+    } else {
+      // Fallback to center area
+      x = width * 0.2 + Math.random() * width * 0.6;
+      y = height * 0.2 + Math.random() * height * 0.6;
+    }
+    
     temperatureParticles.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 1,
-      vy: (Math.random() - 0.5) * 1,
+      x: x,
+      y: y,
+      vx: (Math.random() - 0.5) * 0.8, // Slightly slower movement
+      vy: (Math.random() - 0.5) * 0.8,
       size: Math.max(1, Math.min(4, randomTemp / 10)),
       opacity: Math.random() * 0.4 + 0.2,
       temperature: randomTemp,
@@ -2757,16 +2820,25 @@ function createEnhancedSimulatedParticles(width, height, year) {
 function animateParticles(ctx, canvas) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
+  // Get current location bounds for particle constraint
+  const locationBounds = currentLocation.bounds;
+  if (!locationBounds) return;
+  
   temperatureParticles.forEach(particle => {
     // Update position with slower movement for better visibility
     particle.x += particle.vx * 0.5;
     particle.y += particle.vy * 0.5;
     
-    // Wrap around edges
-    if (particle.x < 0) particle.x = canvas.width;
-    if (particle.x > canvas.width) particle.x = 0;
-    if (particle.y < 0) particle.y = canvas.height;
-    if (particle.y > canvas.height) particle.y = 0;
+    // Constrain particles within location boundaries instead of wrapping around edges
+    const margin = 50; // 50px margin from edges
+    if (particle.x < margin || particle.x > canvas.width - margin) {
+      particle.vx *= -1; // Bounce off horizontal boundaries
+      particle.x = Math.max(margin, Math.min(canvas.width - margin, particle.x));
+    }
+    if (particle.y < margin || particle.y > canvas.height - margin) {
+      particle.vy *= -1; // Bounce off vertical boundaries  
+      particle.y = Math.max(margin, Math.min(canvas.height - margin, particle.y));
+    }
     
     // Enhanced color mapping based on temperature
     let hue, saturation, lightness;
@@ -3272,11 +3344,11 @@ function loadTemperatureFromData(data, year) {
   }
 }
 
-// Enhanced wind layer loading with tile support
+// Simplified wind layer loading
 function loadWindLayer(windData) {
   console.log('🌬️ Wind data received:', windData);
   
-  // Remove existing wind layer if it exists
+  // Remove existing wind layer
   if (windLayer) {
     if (windLayer.setMap) {
       windLayer.setMap(null);
@@ -3288,69 +3360,101 @@ function loadWindLayer(windData) {
     windLayer = null;
   }
   
-  // Handle different wind data types
-  if (windData.type === 'tiles' && windData.mapid) {
-    console.log('🗺️ Loading wind as tile overlay...');
-    
-    // Create tile URL function for wind speed
-    let getTileUrlFunction;
-    
-    if (windData.urlFormat) {
-      getTileUrlFunction = function(tile, zoom) {
-        const url = windData.urlFormat
-          .replace('{z}', zoom)
-          .replace('{x}', tile.x)
-          .replace('{y}', tile.y);
-        console.log(`Wind tile URL: ${url}`);
-        return url;
-      };
-    } else {
-      getTileUrlFunction = function(tile, zoom) {
-        const baseUrl = `https://earthengine.googleapis.com/map/${windData.mapid}/${zoom}/${tile.x}/${tile.y}`;
-        const token = windData.token ? `?token=${windData.token}` : '';
-        const cacheBuster = `${token ? '&' : '?'}cb=${Date.now()}&type=wind`;
-        const url = `${baseUrl}${token}${cacheBuster}`;
-        console.log(`Wind tile URL: ${url}`);
-        return url;
-      };
+  // Clear any existing overlays to prevent conflicts
+  if (map.overlayMapTypes.getLength() > 1) {
+    // Keep only the first overlay (temperature) and remove others
+    while (map.overlayMapTypes.getLength() > 1) {
+      map.overlayMapTypes.removeAt(1);
     }
+  }
+  
+  // Simplified wind layer implementation
+  if (windData.mapid && windData.token) {
+    console.log('🗺️ Loading wind as Google Maps overlay...');
     
-    // Create the wind tile overlay
-    const windTileSource = new google.maps.ImageMapType({
-      name: 'Wind Speed',
-      getTileUrl: getTileUrlFunction,
+    const windMapType = new google.maps.ImageMapType({
+      getTileUrl: function(coord, zoom) {
+        return `https://earthengine.googleapis.com/v1/projects/earthengine-legacy/maps/${windData.mapid}/tiles/${zoom}/${coord.x}/${coord.y}?token=${windData.token}`;
+      },
       tileSize: new google.maps.Size(256, 256),
-      minZoom: 1,
-      maxZoom: 20,
-      opacity: 0.6  // Semi-transparent to show temperature underneath
+      maxZoom: 18,
+      minZoom: 0,
+      name: 'Wind Speed',
+      opacity: 0.6
     });
     
     // Add wind overlay to map
-    console.log('🌬️ Adding wind speed overlay to map');
-    map.overlayMapTypes.insertAt(1, windTileSource);  // Layer 1 (above temperature)
-    windLayer = windTileSource;
+    map.overlayMapTypes.push(windMapType);
+    windLayer = windMapType;
     
-    // Add wind legend
-    addWindLegend(windData.legend);
-    
-    showStatusMessage('🌬️ Wind speed overlay loaded');
-    
-  } else if (windData.type === 'fallback') {
-    console.log('⚠️ Wind visualization fallback:', windData.message);
-    showStatusMessage(`⚠️ ${windData.message}`);
-    
-  } else {
-    console.log('🔄 Loading wind as particle system (legacy)...');
-    const windCanvas = createWindCanvas();
-    if (windCanvas) {
-      loadWindParticles(windData);
-      windLayer = windCanvas; // Store reference
-      console.log('✅ Wind canvas created and particles loaded');
-    } else {
-      console.error('❌ Failed to create wind canvas');
-      showStatusMessage('⚠️ Wind visualization unavailable');
-    }
+    console.log('Wind layer added successfully');
+    return;
   }
+  
+  // Handle fallback wind data
+  if (windData.type === 'fallback') {
+    console.log('⚠️ Wind data fallback:', windData.message);
+    
+    // Create a simple visual indicator for wind
+    const windIndicator = document.createElement('div');
+    windIndicator.id = 'wind-indicator';
+    windIndicator.style.cssText = `
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      background: rgba(0, 100, 200, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 1000;
+    `;
+    windIndicator.textContent = '🌬️ Wind: Moderate (simulated)';
+    
+    document.getElementById('map').appendChild(windIndicator);
+    windLayer = windIndicator;
+    
+    // Remove indicator after 5 seconds
+    setTimeout(() => {
+      if (windIndicator && windIndicator.parentNode) {
+        windIndicator.parentNode.removeChild(windIndicator);
+      }
+    }, 5000);
+    
+    return;
+  }
+  
+  // Handle other wind data formats with simple tile overlay
+  if (windData.type === 'tiles' && windData.mapid) {
+    console.log('🗺️ Loading wind as tile overlay...');
+    
+    const windMapType = new google.maps.ImageMapType({
+      getTileUrl: function(coord, zoom) {
+        if (windData.urlFormat) {
+          return windData.urlFormat
+            .replace('{z}', zoom)
+            .replace('{x}', coord.x)
+            .replace('{y}', coord.y);
+        } else {
+          return `https://earthengine.googleapis.com/v1/projects/earthengine-legacy/maps/${windData.mapid}/tiles/${zoom}/${coord.x}/${coord.y}?token=${windData.token || ''}`;
+        }
+      },
+      tileSize: new google.maps.Size(256, 256),
+      maxZoom: 18,
+      minZoom: 0,
+      name: 'Wind Speed',
+      opacity: 0.5
+    });
+    
+    map.overlayMapTypes.push(windMapType);
+    windLayer = windMapType;
+    console.log('Wind tile overlay added');
+    return;
+  }
+  
+  // Default fallback message
+  console.log('⚠️ No suitable wind data format found');
+  console.log('Wind data structure:', windData);
 }
 
 // Add wind legend
@@ -3655,9 +3759,38 @@ if (typeof window !== 'undefined') {
 
 // Add function to create appropriate legends for different visualization types
 function addVisualizationLegend(mode, year) {
-  // Remove all existing legends to prevent overlapping
-  const existingLegends = document.querySelectorAll('.visualization-legend, #temp-legend, #rainfall-legend, #wind-legend, #anomaly-legend, #terrain-legend');
-  existingLegends.forEach(legend => legend.remove());
+  // Enhanced legend cleanup to prevent overlapping
+  const legendSelectors = [
+    '.visualization-legend', 
+    '#temp-legend', 
+    '#rainfall-legend', 
+    '#wind-legend', 
+    '#anomaly-legend', 
+    '#terrain-legend',
+    '.legend', // Generic legend class
+    '[id*="legend"]', // Any element with "legend" in ID
+    '[class*="legend"]' // Any element with "legend" in class
+  ];
+  
+  legendSelectors.forEach(selector => {
+    const legends = document.querySelectorAll(selector);
+    legends.forEach(legend => {
+      if (legend && legend.parentNode) {
+        legend.parentNode.removeChild(legend);
+      }
+    });
+  });
+  
+  // Also remove any legends that might be attached to the map
+  const mapElement = document.getElementById('map');
+  if (mapElement) {
+    const mapLegends = mapElement.querySelectorAll('[class*="legend"], [id*="legend"]');
+    mapLegends.forEach(legend => {
+      if (legend && legend.parentNode) {
+        legend.parentNode.removeChild(legend);
+      }
+    });
+  }
   
   console.log(`🏷️ Adding ${mode} legend for year ${year}`);
   

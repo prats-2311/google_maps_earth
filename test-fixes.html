@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Visualization - Fixes Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-button {
+            display: inline-block;
+            margin: 5px;
+            padding: 10px 15px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .test-button:hover {
+            background: #1557b0;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Climate Visualization - Fixes Verification</h1>
+        <p>This page tests all the fixes implemented for the climate visualization application.</p>
+        
+        <div class="test-section">
+            <h2>🌍 1. Location Boundary Detection</h2>
+            <p>Test improved boundary detection for different location types:</p>
+            <a href="/?location=California, USA" class="test-button">Test California (State)</a>
+            <a href="/?location=Germany" class="test-button">Test Germany (Country)</a>
+            <a href="/?location=Tokyo, Japan" class="test-button">Test Tokyo (City)</a>
+            <a href="/?location=Texas, USA" class="test-button">Test Texas (Large State)</a>
+            <div id="boundary-status" class="status info">
+                <strong>Expected:</strong> Temperature visualization should be constrained within the selected location's boundaries, not overflow beyond state/country borders.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🌡️ 2. Temperature Particle Constraints</h2>
+            <p>Test that temperature particles stay within location boundaries:</p>
+            <button onclick="testParticles()" class="test-button">Test Particle Boundaries</button>
+            <div id="particle-status" class="status info">
+                <strong>Expected:</strong> Temperature particles should bounce off boundaries instead of wrapping around, staying within the selected location area.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🌬️ 3. Wind Animation</h2>
+            <p>Test wind visualization in weather mode:</p>
+            <button onclick="testWindAnimation()" class="test-button">Test Wind Layer</button>
+            <div id="wind-status" class="status info">
+                <strong>Expected:</strong> Wind speed overlay should appear when switching to "Weather" visualization mode, showing wind patterns as colored tiles.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🏷️ 4. Legend Overlap Prevention</h2>
+            <p>Test that legends don't overlap when switching between visualization modes:</p>
+            <button onclick="testLegendSwitching()" class="test-button">Test Legend Switching</button>
+            <div id="legend-status" class="status info">
+                <strong>Expected:</strong> Only one legend should be visible at a time. Switching between Temperature → Weather → Anomaly → Terrain should cleanly replace legends.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>📱 5. Immersive View Responsiveness</h2>
+            <p>Test immersive view UI/UX on different screen sizes:</p>
+            <button onclick="testImmersiveView()" class="test-button">Test Immersive View</button>
+            <button onclick="testMobileView()" class="test-button">Test Mobile Layout</button>
+            <div id="immersive-status" class="status info">
+                <strong>Expected:</strong> Immersive view should be properly structured with no overlapping elements, responsive on mobile devices.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🔄 6. Complete Workflow Test</h2>
+            <p>Test the complete user workflow:</p>
+            <button onclick="runCompleteTest()" class="test-button">Run Complete Test</button>
+            <div id="workflow-status" class="status info">
+                <strong>Workflow:</strong> Search location → Load temperature data → Switch visualization modes → View immersive impact → Check all features work properly.
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>📊 Test Results</h2>
+            <div id="test-results"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🔗 Quick Access</h2>
+            <a href="/" class="test-button">Main Application</a>
+            <a href="/test-global" class="test-button">Global Location Test</a>
+            <a href="/debug.html" class="test-button">Debug Page</a>
+        </div>
+    </div>
+
+    <script>
+        let testResults = [];
+        
+        function addTestResult(test, status, message) {
+            testResults.push({ test, status, message, timestamp: new Date().toLocaleTimeString() });
+            updateTestResults();
+        }
+        
+        function updateTestResults() {
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = testResults.map(result => `
+                <div class="status ${result.status}">
+                    <strong>[${result.timestamp}] ${result.test}:</strong> ${result.message}
+                </div>
+            `).join('');
+        }
+        
+        function testParticles() {
+            addTestResult('Particle Boundaries', 'info', 'Open main app, select a location, and observe that temperature particles bounce off edges instead of wrapping around.');
+            window.open('/', '_blank');
+        }
+        
+        async function testWindAnimation() {
+            addTestResult('Wind Animation', 'info', 'Testing wind layer endpoint...');
+            
+            try {
+                const response = await fetch('/ee-weather-layer?year=2000&location=California&lat=36.7783&lng=-119.4179');
+                const data = await response.json();
+                
+                if (data.success && data.wind) {
+                    addTestResult('Wind Animation', 'success', `Wind data available: ${data.wind.type} with mapid: ${data.wind.mapid ? 'Yes' : 'No'}`);
+                } else {
+                    addTestResult('Wind Animation', 'error', 'Wind data not available in response');
+                }
+            } catch (error) {
+                addTestResult('Wind Animation', 'error', `Error testing wind endpoint: ${error.message}`);
+            }
+        }
+        
+        function testLegendSwitching() {
+            addTestResult('Legend Switching', 'info', 'Open main app, select location, then switch between Temperature → Weather → Anomaly → Terrain modes. Check that only one legend appears at a time.');
+            window.open('/', '_blank');
+        }
+        
+        function testImmersiveView() {
+            addTestResult('Immersive View', 'info', 'Open main app, select location, click "View Immersive Impact". Check for proper layout and no overlapping elements.');
+            window.open('/', '_blank');
+        }
+        
+        function testMobileView() {
+            // Simulate mobile viewport
+            const viewport = document.querySelector('meta[name="viewport"]');
+            addTestResult('Mobile View', 'info', 'Resize browser to mobile width (< 768px) and test immersive view responsiveness.');
+        }
+        
+        async function runCompleteTest() {
+            addTestResult('Complete Test', 'info', 'Starting complete workflow test...');
+            
+            // Test 1: Check if main app loads
+            try {
+                const response = await fetch('/');
+                if (response.ok) {
+                    addTestResult('Complete Test', 'success', 'Main application loads successfully');
+                } else {
+                    addTestResult('Complete Test', 'error', 'Main application failed to load');
+                    return;
+                }
+            } catch (error) {
+                addTestResult('Complete Test', 'error', `Network error: ${error.message}`);
+                return;
+            }
+            
+            // Test 2: Check Earth Engine connection
+            try {
+                const response = await fetch('/test-ee');
+                const data = await response.json();
+                if (data.success) {
+                    addTestResult('Complete Test', 'success', 'Earth Engine connection working');
+                } else {
+                    addTestResult('Complete Test', 'error', 'Earth Engine connection failed');
+                }
+            } catch (error) {
+                addTestResult('Complete Test', 'error', `Earth Engine test failed: ${error.message}`);
+            }
+            
+            // Test 3: Test location-specific data loading
+            const testLocations = [
+                { name: 'California', lat: 36.7783, lng: -119.4179 },
+                { name: 'Germany', lat: 51.1657, lng: 10.4515 },
+                { name: 'Tokyo', lat: 35.6762, lng: 139.6503 }
+            ];
+            
+            for (const location of testLocations) {
+                try {
+                    const response = await fetch(`/ee-temp-layer?year=2000&location=${location.name}&lat=${location.lat}&lng=${location.lng}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        addTestResult('Complete Test', 'success', `${location.name} temperature data loads successfully`);
+                    } else {
+                        addTestResult('Complete Test', 'error', `${location.name} temperature data failed: ${data.error}`);
+                    }
+                } catch (error) {
+                    addTestResult('Complete Test', 'error', `${location.name} test failed: ${error.message}`);
+                }
+            }
+            
+            addTestResult('Complete Test', 'info', 'Complete workflow test finished. Check individual results above.');
+        }
+        
+        // Auto-run basic connectivity test on page load
+        window.addEventListener('load', function() {
+            addTestResult('Page Load', 'success', 'Test page loaded successfully');
+            
+            // Test server connectivity
+            fetch('/test-ee')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        addTestResult('Server Status', 'success', 'Server and Earth Engine connection working');
+                    } else {
+                        addTestResult('Server Status', 'error', 'Earth Engine connection issue');
+                    }
+                })
+                .catch(error => {
+                    addTestResult('Server Status', 'error', `Server connectivity issue: ${error.message}`);
+                });
+        });
+    </script>
+</body>
+</html>

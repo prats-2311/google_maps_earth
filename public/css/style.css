@@ -263,9 +263,12 @@ button:active {
 #immersive-content {
     width: 95%;
     height: 90%;
+    max-width: 1400px;
+    max-height: 900px;
     background-color: #000;
     border-radius: 16px;
     overflow: hidden;
+    position: relative;
 }
 
 /* Enhanced Immersive Dashboard Styles */
@@ -301,8 +304,10 @@ button:active {
     display: grid;
     grid-template-columns: 2fr 1fr;
     grid-template-rows: auto auto;
-    gap: 20px;
-    height: calc(100% - 200px);
+    gap: 15px;
+    height: calc(100% - 120px);
+    padding: 20px;
+    overflow-y: auto;
 }
 
 .immersive-main-viz {
@@ -538,39 +543,94 @@ button:active {
     box-shadow: 0 5px 15px rgba(255,255,255,0.2);
 }
 
-/* Responsive design for immersive view */
+/* Enhanced responsive design for immersive view */
 @media (max-width: 1200px) {
+    #immersive-content {
+        width: 98%;
+        height: 95%;
+    }
+    
     .immersive-content-grid {
         grid-template-columns: 1fr;
         grid-template-rows: auto auto auto auto;
+        gap: 10px;
+        padding: 15px;
     }
     
     .immersive-controls {
         flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .immersive-header h1 {
+        font-size: 1.5em;
+    }
+    
+    .immersive-header h2 {
+        font-size: 1em;
     }
 }
 
 @media (max-width: 768px) {
+    #immersive-content {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+    
     .immersive-dashboard {
-        padding: 15px;
+        padding: 10px;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    
+    .immersive-header {
+        padding: 10px 0;
     }
     
     .immersive-header h1 {
-        font-size: 2em;
+        font-size: 1.3em;
+    }
+    
+    .immersive-header h2 {
+        font-size: 0.9em;
+    }
+    
+    .immersive-content-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto;
+        gap: 8px;
+        padding: 10px;
+        height: auto;
     }
     
     .decade-buttons {
         grid-template-columns: 1fr;
+        gap: 8px;
     }
     
     .prediction-card {
         grid-template-columns: 1fr;
         text-align: left;
+        padding: 10px;
     }
     
     .control-btn {
-        padding: 10px 15px;
-        font-size: 0.9em;
+        padding: 8px 12px;
+        font-size: 0.8em;
+        margin: 2px;
+    }
+    
+    .immersive-controls {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    #close-immersive-btn {
+        top: 10px;
+        right: 10px;
+        font-size: 24px;
+        padding: 8px 12px;
     }
 }
 

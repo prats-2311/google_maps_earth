@@ -23,6 +23,11 @@ app.get('/test-global', (req, res) => {
   res.sendFile(path.join(__dirname, 'test-global-locations.html'));
 });
 
+// Route for the fixes test page
+app.get('/test-fixes', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-fixes.html'));
+});
+
 /*
  * GOOGLE EARTH ENGINE AUTHENTICATION INSTRUCTIONS
  * 
@@ -116,29 +121,58 @@ async function getLocationROI(locationName, lat, lng, bounds) {
     // Try to find administrative boundary by name
     console.log(`Searching for administrative boundary: ${locationName}`);
 
-    // Try different administrative levels
+    // Try different administrative levels with improved matching
     const adminLevels = [
+      { collection: 'FAO/GAUL/2015/level1', field: 'ADM1_NAME' }, // State/Province first
       { collection: 'FAO/GAUL/2015/level0', field: 'ADM0_NAME' }, // Country
-      { collection: 'FAO/GAUL/2015/level1', field: 'ADM1_NAME' }, // State/Province
       { collection: 'FAO/GAUL/2015/level2', field: 'ADM2_NAME' }  // District/County
+    ];
+
+    // Extract key parts of location name for better matching
+    const locationParts = locationName.split(',').map(part => part.trim());
+    const searchTerms = [
+      locationName, // Full name
+      locationParts[0], // First part (usually city/state)
+      ...locationParts.slice(1) // Other parts (state, country)
     ];
 
     for (const level of adminLevels) {
       try {
         const collection = ee.FeatureCollection(level.collection);
-        const filtered = collection.filter(ee.Filter.eq(level.field, locationName));
-
-        // Check if any features match
-        const size = await new Promise((resolve, reject) => {
-          filtered.size().getInfo((result, error) => {
-            if (error) reject(error);
-            else resolve(result);
+        
+        // Try each search term
+        for (const searchTerm of searchTerms) {
+          if (!searchTerm) continue;
+          
+          // Try exact match first
+          let filtered = collection.filter(ee.Filter.eq(level.field, searchTerm));
+          
+          let size = await new Promise((resolve, reject) => {
+            filtered.size().getInfo((result, error) => {
+              if (error) reject(error);
+              else resolve(result);
+            });
           });
-        });
 
-        if (size > 0) {
-          console.log(`Found ${locationName} in ${level.collection}`);
-          return filtered.first();
+          if (size > 0) {
+            console.log(`Found exact match for "${searchTerm}" in ${level.collection}`);
+            return filtered.first();
+          }
+          
+          // Try case-insensitive partial match
+          filtered = collection.filter(ee.Filter.stringContains(level.field, searchTerm));
+          
+          size = await new Promise((resolve, reject) => {
+            filtered.size().getInfo((result, error) => {
+              if (error) reject(error);
+              else resolve(result);
+            });
+          });
+
+          if (size > 0) {
+            console.log(`Found partial match for "${searchTerm}" in ${level.collection}`);
+            return filtered.first();
+          }
         }
       } catch (error) {
         console.log(`No match in ${level.collection}: ${error.message}`);
