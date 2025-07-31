@@ -33,9 +33,9 @@ var createYearlyImage = function(year) {
   // Create a visualization with year label
   var visualized = clippedTemp.visualize(tempVisParams);
   
-  // Add year text overlay
+  // Add year text overlay (coordinates should be adjusted based on selected region)
   var yearText = ee.Image().paint(ee.FeatureCollection([
-    ee.Feature(ee.Geometry.Point([80.9462, 28.5]), {year: year})
+    ee.Feature(ee.Geometry.Point([0, 20]), {year: year}) // Default world center - adjust as needed
   ]), 1).visualize({palette: ['white'], opacity: 0.8});
   
   return visualized.blend(yearText).set('year', year);

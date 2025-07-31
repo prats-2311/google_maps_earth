@@ -41,6 +41,70 @@ h2 {
     color: #5f6368;
 }
 
+/* Location Search Styles */
+#location-search-section {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid #e8eaed;
+}
+
+.location-search-container {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+#location-search {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+#location-search:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.1);
+}
+
+#search-location-btn {
+    padding: 8px 12px;
+    background-color: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+#search-location-btn:hover {
+    background-color: #1557b0;
+}
+
+#search-location-btn:disabled {
+    background-color: #5f6368;
+    cursor: not-allowed;
+}
+
+.current-location {
+    font-size: 12px;
+    color: #5f6368;
+    padding: 8px;
+    background-color: white;
+    border-radius: 4px;
+    border: 1px solid #e8eaed;
+}
+
+#current-location-name {
+    color: #1a73e8;
+    font-weight: 500;
+}
+
 h3 {
     font-size: 16px;
     margin: 15px 0 10px;

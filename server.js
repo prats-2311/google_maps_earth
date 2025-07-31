@@ -18,6 +18,11 @@ app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
 });
 
+// Route for the global locations test page
+app.get('/test-global', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-global-locations.html'));
+});
+
 /*
  * GOOGLE EARTH ENGINE AUTHENTICATION INSTRUCTIONS
  * 
@@ -96,23 +101,141 @@ app.get('/clear-cache', (req, res) => {
   res.json({ success: true, message: 'Cache cleared successfully' });
 });
 
+// Helper function to get location Region of Interest (ROI)
+async function getLocationROI(locationName, lat, lng, bounds) {
+  try {
+    // If coordinates are provided, create a bounding box ROI
+    if (lat && lng && bounds) {
+      console.log(`Creating ROI from coordinates: ${lat}, ${lng}`);
+      const geometry = ee.Geometry.Rectangle([
+        bounds.west, bounds.south, bounds.east, bounds.north
+      ]);
+      return ee.Feature(geometry);
+    }
+
+    // Try to find administrative boundary by name
+    console.log(`Searching for administrative boundary: ${locationName}`);
+
+    // Try different administrative levels
+    const adminLevels = [
+      { collection: 'FAO/GAUL/2015/level0', field: 'ADM0_NAME' }, // Country
+      { collection: 'FAO/GAUL/2015/level1', field: 'ADM1_NAME' }, // State/Province
+      { collection: 'FAO/GAUL/2015/level2', field: 'ADM2_NAME' }  // District/County
+    ];
+
+    for (const level of adminLevels) {
+      try {
+        const collection = ee.FeatureCollection(level.collection);
+        const filtered = collection.filter(ee.Filter.eq(level.field, locationName));
+
+        // Check if any features match
+        const size = await new Promise((resolve, reject) => {
+          filtered.size().getInfo((result, error) => {
+            if (error) reject(error);
+            else resolve(result);
+          });
+        });
+
+        if (size > 0) {
+          console.log(`Found ${locationName} in ${level.collection}`);
+          return filtered.first();
+        }
+      } catch (error) {
+        console.log(`No match in ${level.collection}: ${error.message}`);
+      }
+    }
+
+    // If no administrative boundary found, create a point-based ROI
+    if (lat && lng) {
+      console.log(`Creating point-based ROI for coordinates: ${lat}, ${lng}`);
+      const point = ee.Geometry.Point([lng, lat]);
+      const buffer = point.buffer(50000); // 50km radius
+      return ee.Feature(buffer);
+    }
+
+    // If no administrative boundary found and no coordinates provided, return error
+    throw new Error(`Unable to find location: ${locationName}. Please try using coordinates or a more specific location name.`);
+
+  } catch (error) {
+    console.error('Error in getLocationROI:', error);
+    throw error; // Propagate the error instead of falling back
+  }
+}
+
+// Helper function to get climate-appropriate temperature ranges
+function getTemperatureRange(locationName, lat) {
+  // Default ranges
+  let tempRange = { min: 10, max: 50 };
+
+  // Adjust based on latitude (climate zones)
+  if (lat) {
+    const absLat = Math.abs(lat);
+
+    if (absLat > 60) {
+      // Arctic/Antarctic
+      tempRange = { min: -30, max: 20 };
+    } else if (absLat > 45) {
+      // Temperate/Subarctic
+      tempRange = { min: -20, max: 35 };
+    } else if (absLat > 23.5) {
+      // Temperate
+      tempRange = { min: -10, max: 45 };
+    } else {
+      // Tropical/Subtropical
+      tempRange = { min: 10, max: 50 };
+    }
+  }
+
+  // Location-specific adjustments
+  const locationLower = locationName.toLowerCase();
+  if (locationLower.includes('alaska') || locationLower.includes('siberia') || locationLower.includes('greenland')) {
+    tempRange = { min: -40, max: 25 };
+  } else if (locationLower.includes('sahara') || locationLower.includes('desert')) {
+    tempRange = { min: 0, max: 60 };
+  } else if (locationLower.includes('antarctica')) {
+    tempRange = { min: -60, max: 10 };
+  }
+
+  console.log(`Temperature range for ${locationName} (lat: ${lat}):`, tempRange);
+  return tempRange;
+}
+
 // Endpoint for Earth Engine time-lapse layer
-app.get('/ee-timelapse-layer', (req, res) => {
+app.get('/ee-timelapse-layer', async (req, res) => {
   try {
     console.log('EE-timelapse-layer endpoint called');
     const year = parseInt(req.query.year) || 2020;
     const bypassCache = req.query.nocache === 'true';
-    console.log(`Generating timelapse for year: ${year}, bypass cache: ${bypassCache}`);
+
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
     
-    // Check cache first (unless bypassed)
-    if (!bypassCache && tileCache[year]) {
-      console.log(`Returning cached result for year ${year}`);
-      console.log(`Cached data for year ${year}:`, {
-        mapid: tileCache[year].mapid,
-        year: tileCache[year].year,
-        simulated: tileCache[year].simulated
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
       });
-      return res.send(tileCache[year]);
+    }
+
+    console.log(`Generating timelapse for year: ${year}, location: ${locationName}, bypass cache: ${bypassCache}`);
+
+    // Create location-specific cache key
+    const cacheKey = `${year}_${locationName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    // Check cache first (unless bypassed)
+    if (!bypassCache && tileCache[cacheKey]) {
+      console.log(`Returning cached result for year ${year}, location: ${locationName}`);
+      console.log(`Cached data for ${cacheKey}:`, {
+        mapid: tileCache[cacheKey].mapid,
+        year: tileCache[cacheKey].year,
+        location: tileCache[cacheKey].location,
+        simulated: tileCache[cacheKey].simulated
+      });
+      return res.send(tileCache[cacheKey]);
     }
     
     // Check if Earth Engine is initialized
@@ -193,11 +316,10 @@ app.get('/ee-timelapse-layer', (req, res) => {
       const firstImage = dataset.first();
       const lastImage = dataset.sort('system:time_start', false).first();
       
-      // Load Uttar Pradesh boundaries for clipping
-      console.log('Loading Uttar Pradesh boundaries...');
-      const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-        .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
-        .first();
+      // Load location boundaries for clipping
+      console.log(`Loading boundaries for location: ${locationName}...`);
+      
+      getLocationROI(locationName, lat, lng, bounds).then(locationROI => {
       
       // Calculate the mean temperature for the year (CRITICAL: this must be done on the filtered dataset)
       console.log(`Calculating mean temperature for year ${year} from ${size} images...`);
@@ -212,30 +334,31 @@ app.get('/ee-timelapse-layer', (req, res) => {
       const tempWithId = tempCelsius.set('computation_id', uniqueId);
       console.log(`Added unique computation ID: ${uniqueId}`);
       
-      // Clip the temperature data to Uttar Pradesh boundaries
-      console.log('Clipping data to Uttar Pradesh boundaries...');
-      const clippedTemp = tempWithId.clip(uttarPradeshROI.geometry());
-      
-      // Define visualization parameters based on Earth Engine documentation
-      // Enhanced temperature range for better precision (0.5°C variance)
-      // Uttar Pradesh temperature range: typically 10-50°C with seasonal variation
+      // Clip the temperature data to location boundaries
+      console.log(`Clipping data to ${locationName} boundaries...`);
+      const clippedTemp = tempWithId.clip(locationROI.geometry());
+
+      // Get climate-appropriate temperature range
+      const tempRange = getTemperatureRange(locationName, lat);
+
+      // Define visualization parameters based on location's climate
       const visParams = {
-        min: 10,    // Winter minimum
-        max: 50,    // Summer maximum  
+        min: tempRange.min,
+        max: tempRange.max,
         palette: [
-          // Cold (10-20°C) - Blues and purples
+          // Cold - Blues and purples
           '000080', '0040ff', '0080ff', '00c0ff', '80e0ff',
-          // Cool (20-25°C) - Light blues to cyan
+          // Cool - Light blues to cyan
           '00ffff', '80ffff', 'c0ffff',
-          // Mild (25-30°C) - Greens
+          // Mild - Greens
           '00ff80', '40ff40', '80ff00', 'c0ff00',
-          // Warm (30-35°C) - Yellows
+          // Warm - Yellows
           'ffff00', 'ffd000', 'ffa000',
-          // Hot (35-40°C) - Oranges
+          // Hot - Oranges
           'ff8000', 'ff6000', 'ff4000',
-          // Very Hot (40-45°C) - Reds
+          // Very Hot - Reds
           'ff2000', 'ff0000', 'e00000',
-          // Extreme (45-50°C) - Dark reds
+          // Extreme - Dark reds
           'c00000', 'a00000', '800000'
         ]
       };
@@ -304,6 +427,14 @@ app.get('/ee-timelapse-layer', (req, res) => {
         
         res.send(response);
       });
+      
+      }).catch(locationError => {
+        console.error('Error getting location ROI:', locationError);
+        return res.status(500).send({
+          success: false,
+          error: `Failed to load location data: ${locationError.message}`
+        });
+      });
     });
   } catch (error) {
     console.error('Exception in ee-timelapse-layer endpoint:', error);
@@ -312,17 +443,32 @@ app.get('/ee-timelapse-layer', (req, res) => {
 });
 
 // Dedicated temperature layer endpoint for time-lapse feature
-app.get('/ee-temp-layer', (req, res) => {
+app.get('/ee-temp-layer', async (req, res) => {
   try {
     console.log('EE-temp-layer endpoint called');
     const year = parseInt(req.query.year) || 2000;
     const bypassCache = req.query.nocache === 'true';
-    console.log(`Generating temperature layer for year: ${year}, bypass cache: ${bypassCache}`);
     
-    // Check cache first for better performance (unless bypassed)
-    const cacheKey = `temp_${year}`;
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
+      });
+    }
+    
+    console.log(`Generating temperature layer for year: ${year}, location: ${locationName}, bypass cache: ${bypassCache}`);
+    
+    // Create location-specific cache key  
+    const cacheKey = `temp_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
     if (!bypassCache && tileCache[cacheKey]) {
-      console.log(`Returning cached temperature result for year ${year}`);
+      console.log(`Returning cached temperature result for year ${year}, location: ${locationName}`);
       console.log(`Cached temperature data for year ${year}:`, {
         mapid: tileCache[cacheKey].mapid,
         year: tileCache[cacheKey].year,
@@ -349,11 +495,9 @@ app.get('/ee-temp-layer', (req, res) => {
       });
     }
     
-    console.log(`Loading Uttar Pradesh boundaries...`);
-    // Step 2: Load Uttar Pradesh administrative boundary
-    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
-      .first();
+    console.log(`Loading boundaries for location: ${locationName}...`);
+    // Load location boundaries using the dynamic location function
+    const locationROI = await getLocationROI(locationName, lat, lng, bounds);
     
     console.log(`Loading ERA5 temperature data for year ${year}...`);
     console.log(`Temperature date filter: ${year}-01-01 to ${year}-12-31`);
@@ -422,9 +566,9 @@ app.get('/ee-temp-layer', (req, res) => {
       const uniqueTempId = `temp_minmax_${year}_${Date.now()}`;
       const tempWithId = tempForVisualization.set('computation_id', uniqueTempId);
 
-      // Clip to Uttar Pradesh boundaries
-      console.log('Clipping temperature data to Uttar Pradesh boundaries...');
-      const clippedTemp = tempWithId.clip(uttarPradeshROI.geometry());
+      // Clip to location boundaries
+      console.log(`Clipping temperature data to ${locationName} boundaries...`);
+      const clippedTemp = tempWithId.clip(locationROI.geometry());
 
       // Enhanced visualization parameters for min/max temperature display
       const tempVisParams = {
@@ -440,7 +584,7 @@ app.get('/ee-temp-layer', (req, res) => {
       // Get statistics for the clipped data to show actual min/max locations
       clippedTemp.reduceRegion({
         reducer: ee.Reducer.minMax(),
-        geometry: uttarPradeshROI.geometry(),
+        geometry: locationROI.geometry(),
         scale: 1000,
         maxPixels: 1e9
       }).getInfo((stats, statsError) => {
@@ -482,7 +626,7 @@ app.get('/ee-temp-layer', (req, res) => {
           dataType: 'temperature',
           units: 'Celsius',
           source: 'ERA5 Daily Aggregates',
-          region: 'Uttar Pradesh'
+          region: locationName || `${lat}, ${lng}`
         };
         
         // Include urlFormat if available (newer API)
@@ -511,16 +655,31 @@ app.get('/ee-temp-layer', (req, res) => {
 });
 
 // Rainfall layer endpoint for expanding weather data visualization
-app.get('/ee-rainfall-layer', (req, res) => {
+app.get('/ee-rainfall-layer', async (req, res) => {
   try {
     console.log('EE-rainfall-layer endpoint called');
     const year = parseInt(req.query.year) || 2000;
-    console.log(`Generating rainfall layer for year: ${year}`);
     
-    // Check cache first for better performance
-    const cacheKey = `rainfall_${year}`;
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
+      });
+    }
+    
+    console.log(`Generating rainfall layer for year: ${year}, location: ${locationName}`);
+    
+    // Create location-specific cache key
+    const cacheKey = `rainfall_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
     if (tileCache[cacheKey]) {
-      console.log(`Returning cached rainfall result for year ${year}`);
+      console.log(`Returning cached rainfall result for year ${year}, location: ${locationName}`);
       return res.send(tileCache[cacheKey]);
     }
     
@@ -542,11 +701,9 @@ app.get('/ee-rainfall-layer', (req, res) => {
       });
     }
     
-    console.log(`Loading Uttar Pradesh boundaries...`);
-    // Load Uttar Pradesh administrative boundary
-    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'))
-      .first();
+    console.log(`Loading boundaries for location: ${locationName}...`);
+    // Load location boundaries using the dynamic location function
+    const locationROI = await getLocationROI(locationName, lat, lng, bounds);
     
     console.log(`Loading CHIRPS rainfall data for year ${year}...`);
     // Load CHIRPS Daily precipitation data for the requested year
@@ -578,9 +735,9 @@ app.get('/ee-rainfall-layer', (req, res) => {
       console.log('Calculating annual total precipitation...');
       const annualRainfall = rainfallCollection.sum();
       
-      // Clip to Uttar Pradesh boundaries
-      console.log('Clipping rainfall data to Uttar Pradesh boundaries...');
-      const clippedRainfall = annualRainfall.clip(uttarPradeshROI.geometry());
+      // Clip to location boundaries
+      console.log(`Clipping rainfall data to ${locationName} boundaries...`);
+      const clippedRainfall = annualRainfall.clip(locationROI.geometry());
       
       // Define visualization parameters suitable for rainfall
       const rainfallVisParams = {
@@ -619,7 +776,7 @@ app.get('/ee-rainfall-layer', (req, res) => {
           dataType: 'rainfall',
           units: 'mm/year',
           source: 'CHIRPS Daily',
-          region: 'Uttar Pradesh'
+          region: locationName || `${lat}, ${lng}`
         };
         
         // Include urlFormat if available (newer API)
@@ -662,7 +819,14 @@ app.get('/debug-anomaly', (req, res) => {
 app.get('/test-anomaly-calc', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || 2000;
-    console.log(`Testing anomaly calculation for year ${year}...`);
+    
+    // Location parameters - use default coordinates if not provided for testing
+    const locationName = req.query.location || 'Test Location';
+    const lat = parseFloat(req.query.lat) || 0;
+    const lng = parseFloat(req.query.lng) || 0;
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    console.log(`Testing anomaly calculation for year ${year}, location: ${locationName}...`);
     
     if (!ee.data.getAuthToken()) {
       return res.status(500).json({ 
@@ -687,15 +851,21 @@ app.get('/test-anomaly-calc', async (req, res) => {
     const anomaly = yearTemp.subtract(baseline);
     
     // Get sample values
-    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+    let locationROI;
+    try {
+      locationROI = await getLocationROI(locationName, lat, lng, bounds);
+    } catch (error) {
+      // For testing, create a simple point-based ROI if location lookup fails
+      const point = ee.Geometry.Point([lng, lat]);
+      locationROI = ee.Feature(point.buffer(50000)); // 50km radius
+    }
     
-    const clippedAnomaly = anomaly.clip(uttarPradeshROI);
+    const clippedAnomaly = anomaly.clip(locationROI.geometry());
     
     // Get statistics
     clippedAnomaly.reduceRegion({
       reducer: ee.Reducer.minMax().combine(ee.Reducer.mean(), '', true),
-      geometry: uttarPradeshROI.geometry(),
+      geometry: locationROI.geometry(),
       scale: 25000,
       maxPixels: 1e9
     }).getInfo((stats, error) => {
@@ -724,6 +894,20 @@ app.get('/ee-bulk-load', async (req, res) => {
   const startYear = parseInt(req.query.startYear) || 1979;
   const endYear = parseInt(req.query.endYear) || 2020;
   
+  // Location parameters - require location to be specified
+  const locationName = req.query.location;
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+  const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+  
+  // Validate that location is provided
+  if (!locationName && (!lat || !lng)) {
+    return res.status(400).send({
+      success: false,
+      error: 'Location name or coordinates (lat, lng) must be provided'
+    });
+  }
+  
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -736,7 +920,7 @@ app.get('/ee-bulk-load', async (req, res) => {
 
   try {
     for (let year = startYear; year <= endYear; year++) {
-      const cacheKey = `temp_${year}`;
+      const cacheKey = `temp_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
       
       // Skip if already cached
       if (tileCache[cacheKey]) {
@@ -760,7 +944,7 @@ app.get('/ee-bulk-load', async (req, res) => {
       })}\n\n`);
 
       // Load data for this year using the same logic as /ee-temp-layer
-      const result = await loadYearData(year);
+      const result = await loadYearData(year, locationName, lat, lng, bounds);
       
       if (result.success) {
         // Cache the result
@@ -806,8 +990,8 @@ app.get('/ee-bulk-load', async (req, res) => {
 });
 
 // Helper function with 5°C temperature range for maximum contrast
-async function loadYearData(year) {
-  return new Promise((resolve) => {
+async function loadYearData(year, locationName, lat, lng, bounds) {
+  return new Promise(async (resolve) => {
     try {
       const collection = ee.ImageCollection('ECMWF/ERA5/DAILY');
       const startDate = `${year}-01-01`;
@@ -817,10 +1001,16 @@ async function loadYearData(year) {
       const dataset = dateFiltered.select('mean_2m_air_temperature');
       const tempCelsius = dataset.mean().subtract(273.15);
       
-      const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-        .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+      let locationROI;
+      try {
+        locationROI = await getLocationROI(locationName, lat, lng, bounds);
+      } catch (error) {
+        // Fallback to point-based ROI for bulk loading
+        const point = ee.Geometry.Point([lng || 0, lat || 0]);
+        locationROI = ee.Feature(point.buffer(50000));
+      }
       
-      const clippedImage = tempCelsius.clip(uttarPradeshROI);
+      const clippedImage = tempCelsius.clip(locationROI.geometry());
       
       // Very narrow 5°C range for maximum contrast
       const visParams = {
@@ -856,6 +1046,20 @@ app.get('/ee-weather-layer', async (req, res) => {
     const year = parseInt(req.query.year);
     const nocache = req.query.nocache === 'true';
     
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
+      });
+    }
+    
     if (!year || year < 1979 || year > 2020) {
       return res.status(400).json({ 
         success: false, 
@@ -863,7 +1067,7 @@ app.get('/ee-weather-layer', async (req, res) => {
       });
     }
 
-    const cacheKey = `weather_${year}`;
+    const cacheKey = `weather_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
     
     if (!nocache && tileCache[cacheKey]) {
       console.log(`Cache hit for weather data ${year}`);
@@ -887,14 +1091,13 @@ app.get('/ee-weather-layer', async (req, res) => {
     const windU = dateFiltered.select('u_component_of_wind_10m').mean();
     const windV = dateFiltered.select('v_component_of_wind_10m').mean();
     
-    // Uttar Pradesh boundary
-    const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-      .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+    // Get location boundary
+    const locationROI = await getLocationROI(locationName, lat, lng, bounds);
     
     // Clip data to region
-    const clippedTemp = tempCelsius.clip(uttarPradeshROI);
-    const clippedWindU = windU.clip(uttarPradeshROI);
-    const clippedWindV = windV.clip(uttarPradeshROI);
+    const clippedTemp = tempCelsius.clip(locationROI);
+    const clippedWindU = windU.clip(locationROI);
+    const clippedWindV = windV.clip(locationROI);
     
     // Enhanced temperature visualization for weather mode
     const tempVisParams = {
@@ -930,7 +1133,7 @@ app.get('/ee-weather-layer', async (req, res) => {
     const windDataPromise = new Promise((resolve, reject) => {
       // Calculate wind speed magnitude: sqrt(u² + v²)
       const windSpeed = windU.pow(2).add(windV.pow(2)).sqrt();
-      const clippedWindSpeed = windSpeed.clip(uttarPradeshROI);
+      const clippedWindSpeed = windSpeed.clip(locationROI);
       
       // Wind speed visualization parameters
       const windVisParams = {
@@ -1013,6 +1216,20 @@ app.get('/ee-anomaly-layer', async (req, res) => {
   try {
     const year = parseInt(req.query.year);
     
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
+      });
+    }
+    
     if (!year || year < 1979 || year > 2020) {
       return res.status(400).json({ 
         success: false, 
@@ -1020,7 +1237,7 @@ app.get('/ee-anomaly-layer', async (req, res) => {
       });
     }
 
-    const cacheKey = `anomaly_${year}`;
+    const cacheKey = `anomaly_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
     
     if (tileCache[cacheKey]) {
       console.log(`Returning cached anomaly data for year ${year}`);
@@ -1110,17 +1327,16 @@ app.get('/ee-anomaly-layer', async (req, res) => {
         // Calculate anomaly (difference from baseline)
         const anomaly = yearTemp.subtract(baseline);
         
-        // Clip to Uttar Pradesh
-        const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-          .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+        // Get location boundary
+        getLocationROI(locationName, lat, lng, bounds).then(locationROI => {
         
-        const clippedAnomaly = anomaly.clip(uttarPradeshROI);
+        const clippedAnomaly = anomaly.clip(locationROI);
         
         // Get statistics for the anomaly to understand the data range
         console.log(`Getting anomaly statistics for year ${year}...`);
         clippedAnomaly.reduceRegion({
           reducer: ee.Reducer.minMax(),
-          geometry: uttarPradeshROI.geometry(),
+          geometry: locationROI.geometry(),
           scale: 1000,
           maxPixels: 1e9
         }).getInfo((stats, statsError) => {
@@ -1189,6 +1405,14 @@ app.get('/ee-anomaly-layer', async (req, res) => {
             res.json(response);
           }
         });
+        
+        }).catch(locationError => {
+          console.error('Error getting location ROI in anomaly endpoint:', locationError);
+          return res.status(500).json({
+            success: false,
+            error: `Failed to load location data: ${locationError.message}`
+          });
+        });
       });
     });
     
@@ -1206,6 +1430,20 @@ app.get('/ee-terrain-layer', async (req, res) => {
   try {
     const year = parseInt(req.query.year);
     
+    // Location parameters - require location to be specified
+    const locationName = req.query.location;
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    const bounds = req.query.bounds ? JSON.parse(req.query.bounds) : null;
+    
+    // Validate that location is provided
+    if (!locationName && (!lat || !lng)) {
+      return res.status(400).send({
+        success: false,
+        error: 'Location name or coordinates (lat, lng) must be provided'
+      });
+    }
+    
     if (!year || year < 1979 || year > 2020) {
       return res.status(400).json({ 
         success: false, 
@@ -1213,7 +1451,7 @@ app.get('/ee-terrain-layer', async (req, res) => {
       });
     }
 
-    const cacheKey = `terrain_${year}`;
+    const cacheKey = `terrain_${year}_${locationName ? locationName.replace(/[^a-zA-Z0-9]/g, '_') : `${lat}_${lng}`}`;
     
     if (tileCache[cacheKey]) {
       return res.json(tileCache[cacheKey]);
@@ -1267,12 +1505,11 @@ app.get('/ee-terrain-layer', async (req, res) => {
       // Calculate mean temperature and convert to Celsius
       const tempCelsius = collection.mean().subtract(273.15);
       
-      // Clip to Uttar Pradesh
-      const uttarPradeshROI = ee.FeatureCollection('FAO/GAUL/2015/level1')
-        .filter(ee.Filter.eq('ADM1_NAME', 'Uttar Pradesh'));
+      // Get location boundary
+      getLocationROI(locationName, lat, lng, bounds).then(locationROI => {
       
-      const clippedTemp = tempCelsius.clip(uttarPradeshROI);
-      const clippedHillshade = hillshade.clip(uttarPradeshROI);
+      const clippedTemp = tempCelsius.clip(locationROI);
+      const clippedHillshade = hillshade.clip(locationROI);
       
       // Create temperature visualization
       const tempVis = clippedTemp.visualize({
@@ -1324,6 +1561,14 @@ app.get('/ee-terrain-layer', async (req, res) => {
           tileCache[cacheKey] = response;
           res.json(response);
         }
+      });
+      
+      }).catch(locationError => {
+        console.error('Error getting location ROI in terrain endpoint:', locationError);
+        return res.status(500).json({
+          success: false,
+          error: `Failed to load location data: ${locationError.message}`
+        });
       });
     });
     

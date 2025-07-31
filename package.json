@@ -1,7 +1,7 @@
 {
   "name": "google-maps-earth",
   "version": "1.0.0",
-  "description": "Climate visualization application for Uttar Pradesh using Google Maps and Earth Engine",
+  "description": "Global climate visualization application using Google Maps and Earth Engine",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

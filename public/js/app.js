@@ -29,8 +29,9 @@ let temperatureParticles = [];
 let animationFrame = null;
 
 // Global location and caching
-let currentLocation = { name: 'Uttar Pradesh, India', lat: 26.8467, lon: 80.9462, bounds: null };
+let currentLocation = { name: null, lat: null, lon: null, bounds: null };
 let locationCache = {};
+let placesService = null;
 
 // Utility function for debouncing
 function debounce(func, delay) {
@@ -94,9 +95,10 @@ function initMapInternal() {
       return;
     }
     
-    const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
-    const uttarPradeshBounds = {
-      north: 29.3, south: 23.9, east: 84.6, west: 77.1
+    // Default to world view initially
+    const worldCenter = { lat: 20, lng: 0 };
+    const worldBounds = {
+      north: 85, south: -85, east: 180, west: -180
     };
     
     const mapElement = document.getElementById('map');
@@ -106,31 +108,34 @@ function initMapInternal() {
       return;
     }
     
-    // Create map with better initial settings
+    // Create map with world view initially
     map = new google.maps.Map(mapElement, {
-      center: uttarPradeshCenter,
-      zoom: 7,
+      center: worldCenter,
+      zoom: 2,
       mapTypeId: 'terrain',
       mapTypeControl: true,
       streetViewControl: false,
-      fullscreenControl: true,
-      restriction: {
-        latLngBounds: uttarPradeshBounds,
-        strictBounds: false
-      }
+      fullscreenControl: true
+      // No restrictions to allow global access
     });
+    
+    // Initialize Places service for location search
+    placesService = new google.maps.places.PlacesService(map);
     
     console.log("Map created, waiting for idle state...");
     
-    // Wait for map to be fully loaded before adding overlays
+    // Wait for map to be fully loaded before initializing
     google.maps.event.addListenerOnce(map, 'idle', function() {
-      console.log("Map is idle, loading initial visualization...");
+      console.log("Map is idle, ready for location selection...");
       hideLoadingSpinner();
       
-      // Load initial visualization instead of just temperature
-      loadVisualization(selectedYear);
+      // Show message to select location first
+      showLocationSelectionMessage();
       
-      // Add visualization controls
+      // Initialize location search functionality
+      initializeLocationSearch();
+      
+      // Add visualization controls (disabled until location is selected)
       setTimeout(() => {
         addVisualizationControls();
       }, 1000);
@@ -145,6 +150,178 @@ function initMapInternal() {
     hideLoadingSpinner();
     showError("Failed to initialize map: " + error.message);
   }
+}
+
+// Show message prompting user to select a location
+function showLocationSelectionMessage() {
+  console.log('Showing location selection message');
+  const dataInfoRegion = document.getElementById('data-info-region');
+  if (dataInfoRegion) {
+    dataInfoRegion.textContent = 'Select a location to view climate data';
+  }
+  
+  // Disable controls until location is selected
+  disableControlsUntilLocationSelected();
+}
+
+// Disable controls until location is selected
+function disableControlsUntilLocationSelected() {
+  const controls = [
+    'load-all-data-btn',
+    'year-slider', 
+    'predict-btn',
+    'show-solar-btn',
+    'show-cooling-zones-btn'
+  ];
+  
+  controls.forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.disabled = true;
+      element.style.opacity = '0.5';
+      element.title = 'Please select a location first';
+    }
+  });
+}
+
+// Enable controls after location is selected
+function enableControlsAfterLocationSelected() {
+  const controls = [
+    'load-all-data-btn',
+    'year-slider',
+    'predict-btn', 
+    'show-solar-btn',
+    'show-cooling-zones-btn'
+  ];
+  
+  controls.forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.disabled = false;
+      element.style.opacity = '1';
+      element.title = '';
+    }
+  });
+}
+
+// Initialize location search functionality
+function initializeLocationSearch() {
+  console.log('Initializing location search...');
+  
+  const searchInput = document.getElementById('location-search');
+  const searchButton = document.getElementById('search-location-btn');
+  
+  if (!searchInput || !searchButton) {
+    console.error('Location search elements not found');
+    return;
+  }
+  
+  // Add event listeners
+  searchButton.addEventListener('click', performLocationSearch);
+  searchInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      performLocationSearch();
+    }
+  });
+  
+  // Enable autocomplete
+  const autocomplete = new google.maps.places.Autocomplete(searchInput, {
+    types: ['(regions)'], // Focus on regions, countries, states, cities
+    fields: ['name', 'geometry', 'place_id', 'formatted_address']
+  });
+  
+  autocomplete.addListener('place_changed', function() {
+    const place = autocomplete.getPlace();
+    if (place.geometry) {
+      setCurrentLocation(place);
+    }
+  });
+}
+
+// Perform location search
+function performLocationSearch() {
+  const searchInput = document.getElementById('location-search');
+  const query = searchInput.value.trim();
+  
+  if (!query) {
+    alert('Please enter a location name');
+    return;
+  }
+  
+  console.log(`Searching for location: ${query}`);
+  showLoadingSpinner('Searching for location...');
+  
+  // Use Places service to search
+  const request = {
+    query: query,
+    fields: ['name', 'geometry', 'place_id', 'formatted_address']
+  };
+  
+  placesService.textSearch(request, (results, status) => {
+    hideLoadingSpinner();
+    
+    if (status === google.maps.places.PlacesServiceStatus.OK && results[0]) {
+      const place = results[0];
+      setCurrentLocation(place);
+    } else {
+      console.error('Location search failed:', status);
+      alert(`Location "${query}" not found. Please try a different search term.`);
+    }
+  });
+}
+
+// Set current location and update the application
+function setCurrentLocation(place) {
+  console.log('Setting location:', place);
+  
+  const bounds = place.geometry.viewport;
+  const location = place.geometry.location;
+  
+  // Update current location
+  currentLocation = {
+    name: place.formatted_address || place.name,
+    lat: location.lat(),
+    lon: location.lng(),
+    bounds: bounds ? {
+      north: bounds.getNorthEast().lat(),
+      south: bounds.getSouthWest().lat(),
+      east: bounds.getNorthEast().lng(),
+      west: bounds.getSouthWest().lng()
+    } : null
+  };
+  
+  console.log('Current location set to:', currentLocation);
+  
+  // Update UI
+  updateLocationDisplay();
+  enableControlsAfterLocationSelected();
+  
+  // Center map on location
+  map.setCenter(location);
+  if (bounds) {
+    map.fitBounds(bounds);
+  } else {
+    map.setZoom(8); // Default zoom for point locations
+  }
+  
+  // Load initial visualization for this location
+  loadVisualization(selectedYear);
+}
+
+// Update location display in UI
+function updateLocationDisplay() {
+  const currentLocationName = document.getElementById('current-location-name');
+  const dataInfoRegion = document.getElementById('data-info-region');
+  
+  if (currentLocationName) {
+    currentLocationName.textContent = currentLocation.name;
+  }
+  
+  if (dataInfoRegion) {
+    dataInfoRegion.textContent = currentLocation.name;
+  }
+  
+  console.log('Location display updated');
 }
 
 // Set up event listeners for UI controls
@@ -276,6 +453,13 @@ function setupEventListeners() {
 
 // Load the dedicated Earth Engine temperature layer for time-lapse feature
 function loadTemperatureLayer(year) {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    console.log('No location selected, cannot load temperature data');
+    showError('Please select a location first');
+    return;
+  }
+  
   if (isLoading) {
     console.log("Already loading temperature data, request ignored");
     return;
@@ -284,7 +468,7 @@ function loadTemperatureLayer(year) {
   isLoading = true;
   showLoadingSpinner();
   
-  console.log(`Loading temperature layer for year ${year}...`);
+  console.log(`Loading temperature layer for year ${year} at ${currentLocation.name}...`);
   
   // Remove previous overlay completely
   if (currentOverlay) {
@@ -299,12 +483,23 @@ function loadTemperatureLayer(year) {
     existingLegend.remove();
   }
   
-  // Fetch temperature data
+  // Fetch temperature data with location parameters
   const urlParams = new URLSearchParams(window.location.search);
   const debugMode = urlParams.get('debug') === 'true';
   const cacheParam = debugMode ? '&nocache=true' : '';
   
-  fetch(`/ee-temp-layer?year=${year}${cacheParam}`)
+  // Build location parameters
+  const locationParams = new URLSearchParams({
+    location: currentLocation.name,
+    lat: currentLocation.lat.toString(),
+    lng: currentLocation.lon.toString()
+  });
+  
+  if (currentLocation.bounds) {
+    locationParams.set('bounds', JSON.stringify(currentLocation.bounds));
+  }
+  
+  fetch(`/ee-temp-layer?year=${year}&${locationParams.toString()}${cacheParam}`)
     .then(response => {
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
@@ -561,12 +756,22 @@ function analyzeEarthEngineData() {
 
 // Train TensorFlow.js model and predict future temperatures
 function trainAndPredict() {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    alert('Please select a location first to generate predictions');
+    return;
+  }
+  
   // First analyze the data structure
   analyzeEarthEngineData();
   
-  // Extract features (years) and labels (temperatures) from historical data
-  const years = historicalTemperatureData.map(d => d.year);
-  const temps = historicalTemperatureData.map(d => d.avgTemp);
+  // Get location-specific climate data for AI training
+  const locationKey = currentLocation.name.replace(/[^a-zA-Z0-9]/g, '_');
+  const locationData = getLocationClimateData(locationKey, currentLocation.lat);
+  
+  // Extract features (years) and labels (temperatures) from location-specific data
+  const years = locationData.map(d => d.year);
+  const temps = locationData.map(d => d.avgTemp);
   
   // Normalize the data
   const yearMin = Math.min(...years);
@@ -600,7 +805,8 @@ function trainAndPredict() {
     // Denormalize the predictions
     const predictedTemps = normalizedPredictions.map(p => p * (tempMax - tempMin) + tempMin);
     
-    // Display the predictions
+    // Display the predictions with location information
+    document.getElementById('prediction-location-name').textContent = currentLocation.name;
     document.getElementById('temp-2040').textContent = `${predictedTemps[0].toFixed(1)}°C`;
     document.getElementById('temp-2050').textContent = `${predictedTemps[1].toFixed(1)}°C`;
     document.getElementById('temp-2060').textContent = `${predictedTemps[2].toFixed(1)}°C`;
@@ -614,15 +820,32 @@ function trainAndPredict() {
   });
 }
 
-// Fetch air quality data for Lucknow
+// Fetch air quality data for selected location
 function fetchAirQuality() {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    console.log('No location selected for air quality data');
+    return;
+  }
+  
   // In a real application, this would call the Google Maps Platform Air Quality API
-  // For this demo, we'll simulate the API response
+  // For this demo, we'll simulate the API response based on location
+  console.log(`Fetching air quality data for: ${currentLocation.name}`);
   
   // Simulate API call delay
   setTimeout(() => {
-    // Sample AQI data (simulated)
-    const aqiValue = Math.floor(Math.random() * (300 - 150) + 150);
+    // Sample AQI data (simulated) - could be adjusted based on location type
+    let baseAQI = 150;
+    
+    // Adjust base AQI based on location characteristics (rough simulation)
+    const locationLower = currentLocation.name.toLowerCase();
+    if (locationLower.includes('rural') || locationLower.includes('forest') || locationLower.includes('mountain')) {
+      baseAQI = 50; // Rural areas typically have better air quality
+    } else if (locationLower.includes('city') || locationLower.includes('urban') || locationLower.includes('delhi') || locationLower.includes('beijing')) {
+      baseAQI = 200; // Urban areas typically have poorer air quality
+    }
+    
+    const aqiValue = Math.floor(Math.random() * 100 + (baseAQI - 50));
     let aqiCategory, categoryColor;
     
     if (aqiValue <= 50) {
@@ -658,10 +881,16 @@ function fetchAirQuality() {
 
 // Show solar potential for buildings
 function showSolarPotential() {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    alert('Please select a location first to view solar potential');
+    return;
+  }
+  
   // In a real application, this would use the Google Maps Platform Solar API
   // For this demo, we'll set up a click listener on the map
   
-  alert('Click on any building to see its solar potential.');
+  alert(`Click on any building in ${currentLocation.name} to see its solar potential.`);
   
   // Set up a click listener on the map
   google.maps.event.addListenerOnce(map, 'click', function(event) {
@@ -693,18 +922,41 @@ function showSolarPotential() {
   });
 }
 
+// Generate sample parks around a location for demo purposes
+function generateSampleParks(lat, lng, locationName) {
+  const parks = [];
+  const parkTypes = ['Park', 'Garden', 'Green Space', 'Nature Reserve', 'Botanical Garden'];
+  const parkNames = ['Central', 'Memorial', 'Riverside', 'Community', 'City'];
+  
+  // Generate 5 sample parks within ~10km radius of the location
+  for (let i = 0; i < 5; i++) {
+    const offsetLat = (Math.random() - 0.5) * 0.1; // ~10km radius
+    const offsetLng = (Math.random() - 0.5) * 0.1;
+    
+    const parkType = parkTypes[i % parkTypes.length];
+    const parkName = parkNames[i % parkNames.length];
+    
+    parks.push({
+      name: `${parkName} ${parkType}`,
+      lat: lat + offsetLat,
+      lng: lng + offsetLng
+    });
+  }
+  
+  return parks;
+}
+
 // Show cooling zones (parks and green spaces)
 function showCoolingZones() {
-  // In a real application, this would use the Google Maps Platform Places API
-  // For this demo, we'll add some sample parks in Lucknow
+  // Check if location is selected
+  if (!currentLocation.name) {
+    alert('Please select a location first to view cooling zones');
+    return;
+  }
   
-  const parks = [
-    { name: "Janeshwar Mishra Park", lat: 26.8543, lng: 80.9762 },
-    { name: "Ambedkar Memorial Park", lat: 26.8684, lng: 80.9339 },
-    { name: "Gomti Riverfront Park", lat: 26.8601, lng: 80.9346 },
-    { name: "Buddha Park", lat: 26.7747, lng: 80.9310 },
-    { name: "Dr. Ram Manohar Lohia Park", lat: 26.8728, lng: 80.9459 }
-  ];
+  // In a real application, this would use the Google Maps Platform Places API
+  // For this demo, we'll generate sample parks around the selected location
+  const parks = generateSampleParks(currentLocation.lat, currentLocation.lon, currentLocation.name);
   
   // Clear any existing markers
   if (window.parkMarkers) {
@@ -784,7 +1036,7 @@ function showImmersiveView() {
     <div class="immersive-dashboard">
       <div class="immersive-header">
         <h1>🌡️ Climate Impact Visualization</h1>
-        <h2>Uttar Pradesh, India - Year ${currentYear}</h2>
+        <h2>${currentLocation.name || 'Select Location'} - Year ${currentYear}</h2>
       </div>
       
       <div class="immersive-content-grid">
@@ -914,12 +1166,13 @@ function getCurrentTemperatureData(year) {
 }
 
 function generateClimateNarrative(year, tempData) {
+  const locationName = currentLocation.name || 'this region';
   const narratives = {
-    1980: "The 1980s marked a relatively stable climate period for Uttar Pradesh, with traditional monsoon patterns and moderate temperatures.",
-    1990: "The 1990s saw the beginning of subtle climate shifts, with slightly warmer summers and changing rainfall patterns.",
-    2000: "The new millennium brought noticeable changes - increased heat waves and more unpredictable weather patterns.",
+    1980: `The 1980s marked a relatively stable climate period for ${locationName}, with traditional weather patterns and moderate temperatures.`,
+    1990: "The 1990s saw the beginning of subtle climate shifts, with slightly warmer temperatures and changing precipitation patterns.",
+    2000: "The new millennium brought noticeable changes - increased heat events and more unpredictable weather patterns.",
     2010: "The 2010s witnessed significant climate acceleration with record-breaking temperatures and extreme weather events.",
-    2020: "Recent years show alarming trends with unprecedented heat waves, erratic monsoons, and deteriorating air quality."
+    2020: "Recent years show alarming trends with unprecedented temperature changes, erratic weather patterns, and environmental stress."
   };
   
   const decade = Math.floor(year / 10) * 10;
@@ -935,10 +1188,13 @@ function initializeImmersiveMap(year) {
   const immersiveMapElement = document.getElementById('immersive-map');
   if (!immersiveMapElement) return;
   
-  const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
+  // Use current location or default to world center if no location selected
+  const mapCenter = currentLocation.lat && currentLocation.lon 
+    ? { lat: currentLocation.lat, lng: currentLocation.lon }
+    : { lat: 20, lng: 0 };
   
   const immersiveMap = new google.maps.Map(immersiveMapElement, {
-    center: uttarPradeshCenter,
+    center: mapCenter,
     zoom: 8,
     mapTypeId: 'satellite',
     mapTypeControl: true,
@@ -967,14 +1223,22 @@ function initializeImmersiveMap(year) {
   console.log('🗺️ Immersive map initialized successfully');
 }
 
-// Add 3D temperature markers for major cities in Uttar Pradesh
+// Add 3D temperature markers for the selected location
 function add3DTemperatureMarkers(map, year) {
+  // Use current location as the main marker point
+  if (!currentLocation.lat || !currentLocation.lon) {
+    console.log('No location coordinates available for temperature markers');
+    return;
+  }
+  
   const cities = [
-    { name: 'Lucknow', lat: 26.8467, lng: 80.9462, baseTemp: 26.5, isCapital: true },
-    { name: 'Kanpur', lat: 26.4499, lng: 80.3319, baseTemp: 27.2, isCapital: false },
-    { name: 'Agra', lat: 27.1767, lng: 78.0081, baseTemp: 26.8, isCapital: false },
-    { name: 'Varanasi', lat: 25.3176, lng: 82.9739, baseTemp: 26.9, isCapital: false },
-    { name: 'Allahabad', lat: 25.4358, lng: 81.8463, baseTemp: 26.7, isCapital: false }
+    { 
+      name: currentLocation.name, 
+      lat: currentLocation.lat, 
+      lng: currentLocation.lon, 
+      baseTemp: 22.0, // Default base temperature
+      isCapital: true 
+    }
   ];
   
   cities.forEach(city => {
@@ -1488,6 +1752,12 @@ if (typeof window !== 'undefined') {
 
 // Enhanced bulk loading with all data types
 function startBulkLoading() {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    alert('Please select a location first before loading data');
+    return;
+  }
+  
   const startYear = parseInt(document.getElementById('start-year').value);
   const endYear = parseInt(document.getElementById('end-year').value);
   
@@ -1495,6 +1765,8 @@ function startBulkLoading() {
     alert('Start year must be less than end year');
     return;
   }
+  
+  console.log(`Starting bulk loading for ${currentLocation.name} from ${startYear} to ${endYear}`);
 
   const loadingSection = document.getElementById('loading-progress');
   const progressFill = document.getElementById('progress-fill');
@@ -1532,11 +1804,24 @@ function startBulkLoading() {
   
   // Load single data type for a year
   async function loadDataType(year, dataType) {
+    // Build location parameters
+    const locationParams = new URLSearchParams({
+      location: currentLocation.name,
+      lat: currentLocation.lat.toString(),
+      lng: currentLocation.lon.toString()
+    });
+    
+    if (currentLocation.bounds) {
+      locationParams.set('bounds', JSON.stringify(currentLocation.bounds));
+    }
+    
+    const locationParamString = locationParams.toString();
+    
     const endpoints = {
-      temperature: `/ee-temp-layer?year=${year}`,
-      weather: `/ee-weather-layer?year=${year}`,
-      anomaly: `/ee-anomaly-layer?year=${year}`,
-      terrain: `/ee-terrain-layer?year=${year}`
+      temperature: `/ee-temp-layer?year=${year}&${locationParamString}`,
+      weather: `/ee-weather-layer?year=${year}&${locationParamString}`,
+      anomaly: `/ee-anomaly-layer?year=${year}&${locationParamString}`,
+      terrain: `/ee-terrain-layer?year=${year}&${locationParamString}`
     };
     
     try {
@@ -2367,15 +2652,25 @@ function updateTemperatureParticles(year) {
 // Create particles based on real Earth Engine temperature data
 async function createRealTemperatureParticles(width, height, year) {
   try {
-    // Fetch temperature data for specific locations in Uttar Pradesh
-    const response = await fetch(`/ee-temp-points?year=${year}`);
+    // Fetch temperature data for the currently selected location
+    const response = await fetch(`/ee-temp-points?year=${year}&location=${encodeURIComponent(currentLocation.name)}&lat=${currentLocation.lat}&lng=${currentLocation.lon}`);
     const data = await response.json();
     
     if (data.success && data.temperaturePoints) {
       // Use real temperature data
+      // Calculate screen coordinates based on current location bounds
+      const bounds = currentLocation.bounds || {
+        north: currentLocation.lat + 2,
+        south: currentLocation.lat - 2,
+        east: currentLocation.lon + 2,
+        west: currentLocation.lon - 2
+      };
+      const latRange = bounds.north - bounds.south;
+      const lngRange = bounds.east - bounds.west;
+      
       temperatureParticles = data.temperaturePoints.map((point, index) => ({
-        x: (point.longitude - 77) * (width / 6) + width * 0.3, // Convert lon to screen x
-        y: (28 - point.latitude) * (height / 6) + height * 0.3, // Convert lat to screen y
+        x: ((point.longitude - bounds.west) / lngRange) * width * 0.8 + width * 0.1, // Convert lon to screen x
+        y: ((bounds.north - point.latitude) / latRange) * height * 0.8 + height * 0.1, // Convert lat to screen y
         vx: (Math.random() - 0.5) * 1,
         vy: (Math.random() - 0.5) * 1,
         size: Math.max(2, Math.min(6, point.temperature / 8)), // Size based on temperature
@@ -2393,25 +2688,39 @@ async function createRealTemperatureParticles(width, height, year) {
   }
 }
 
-// Enhanced simulated particles based on real climate patterns
+// Enhanced simulated particles based on selected location
 function createEnhancedSimulatedParticles(width, height, year) {
-  // Real locations in Uttar Pradesh with realistic temperature variations
-  const upLocations = [
-    { name: 'Lucknow', lat: 26.8467, lon: 80.9462, baseTemp: 26.5 },
-    { name: 'Kanpur', lat: 26.4499, lon: 80.3319, baseTemp: 27.2 },
-    { name: 'Agra', lat: 27.1767, lon: 78.0081, baseTemp: 26.8 },
-    { name: 'Varanasi', lat: 25.3176, lon: 82.9739, baseTemp: 26.9 },
-    { name: 'Allahabad', lat: 25.4358, lon: 81.8463, baseTemp: 26.7 },
-    { name: 'Meerut', lat: 28.9845, lon: 77.7064, baseTemp: 25.8 },
-    { name: 'Bareilly', lat: 28.3670, lon: 79.4304, baseTemp: 25.9 },
-    { name: 'Gorakhpur', lat: 26.7606, lon: 83.3732, baseTemp: 26.4 }
+  // Use current location for temperature simulation
+  if (!currentLocation.lat || !currentLocation.lon) {
+    console.log('No location available for particle simulation');
+    return;
+  }
+  
+  // Create a grid of simulated temperature points around the selected location
+  const locations = [
+    { name: currentLocation.name, lat: currentLocation.lat, lon: currentLocation.lon, baseTemp: 22.0 }
   ];
   
-  temperatureParticles = upLocations.map((location, index) => {
+  // Add some variation points around the main location if we have bounds
+  if (currentLocation.bounds) {
+    const bounds = currentLocation.bounds;
+    const latRange = bounds.north - bounds.south;
+    const lngRange = bounds.east - bounds.west;
+    
+    // Add 4 corner points for more realistic simulation
+    locations.push(
+      { name: 'North', lat: bounds.north - latRange * 0.1, lon: currentLocation.lon, baseTemp: 21.5 },
+      { name: 'South', lat: bounds.south + latRange * 0.1, lon: currentLocation.lon, baseTemp: 22.5 },
+      { name: 'East', lat: currentLocation.lat, lon: bounds.east - lngRange * 0.1, baseTemp: 22.2 },
+      { name: 'West', lat: currentLocation.lat, lon: bounds.west + lngRange * 0.1, baseTemp: 21.8 }
+    );
+  }
+  
+  temperatureParticles = locations.map((location, index) => {
     // Calculate realistic temperature based on year and location
     const yearOffset = (year - 1980) * 0.03; // 0.03°C increase per year
-    const seasonalVariation = Math.sin((index / upLocations.length) * Math.PI * 2) * 3; // ±3°C seasonal
-    const urbanHeatIsland = location.name === 'Lucknow' || location.name === 'Kanpur' ? 1.5 : 0;
+    const seasonalVariation = Math.sin((index / locations.length) * Math.PI * 2) * 3; // ±3°C seasonal
+    const urbanHeatIsland = location.name === currentLocation.name ? 1.0 : 0; // Urban heat island effect
     
     const realTemp = location.baseTemp + yearOffset + seasonalVariation + urbanHeatIsland;
     
@@ -2690,6 +2999,13 @@ function addEnhancedLegend(mode, year) {
 
 // Enhanced visualization loader with caching support
 function loadVisualization(year) {
+  // Check if location is selected
+  if (!currentLocation.name) {
+    console.log('No location selected, cannot load visualization data');
+    showError('Please select a location first');
+    return;
+  }
+  
   // If visualization controls aren't ready yet, fall back to temperature
   if (!currentVisualizationMode || currentVisualizationMode === 'temperature') {
     console.log(`Loading temperature layer for year ${year} (fallback)`);
@@ -2729,25 +3045,38 @@ function loadVisualization(year) {
     windLayer = null;
   }
   
+  // Build location parameters
+  const locationParams = new URLSearchParams({
+    location: currentLocation.name,
+    lat: currentLocation.lat.toString(),
+    lng: currentLocation.lon.toString()
+  });
+  
+  if (currentLocation.bounds) {
+    locationParams.set('bounds', JSON.stringify(currentLocation.bounds));
+  }
+  
+  const locationParamString = locationParams.toString();
+  
   let endpoint = '';
   switch(currentVisualizationMode) {
     case 'temperature':
-      endpoint = `/ee-temp-layer?year=${year}`;
+      endpoint = `/ee-temp-layer?year=${year}&${locationParamString}`;
       break;
     case 'weather':
-      endpoint = `/ee-weather-layer?year=${year}`;
+      endpoint = `/ee-weather-layer?year=${year}&${locationParamString}`;
       break;
     case 'anomaly':
-      endpoint = `/ee-anomaly-layer?year=${year}`;
+      endpoint = `/ee-anomaly-layer?year=${year}&${locationParamString}`;
       break;
     case 'terrain':
-      endpoint = `/ee-terrain-layer?year=${year}`;
+      endpoint = `/ee-terrain-layer?year=${year}&${locationParamString}`;
       break;
     case 'snow':
-      endpoint = `/ee-snow-layer?year=${year}`;
+      endpoint = `/ee-snow-layer?year=${year}&${locationParamString}`;
       break;
     default:
-      endpoint = `/ee-temp-layer?year=${year}`;
+      endpoint = `/ee-temp-layer?year=${year}&${locationParamString}`;
   }
   
   console.log(`🔄 Loading ${currentVisualizationMode} visualization for year ${year} from server...`);

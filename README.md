@@ -1,18 +1,19 @@
-# Climate Visualization for Uttar Pradesh
+# Global Climate Visualization
 
-An interactive climate visualization application that shows historical temperature data, predicts future climate trends, and displays environmental health impacts for Uttar Pradesh, India.
+An interactive climate visualization application that shows historical temperature data, predicts future climate trends, and displays environmental health impacts for any location worldwide.
 
 ## Features
 
 ### Core Features
+- **Global Location Search**: Search and select any location worldwide for climate analysis
 - **Historical Climate Time-Lapse**: Interactive visualization showing average annual temperature from 1980 to present
-- **AI-Powered Future Prediction**: TensorFlow.js model to predict temperatures for future decades
-- **Real-Time Health Impact**: Display of current Air Quality Index for Lucknow
+- **AI-Powered Future Prediction**: TensorFlow.js model to predict temperatures for future decades based on location-specific data
+- **Real-Time Health Impact**: Display of current Air Quality Index for selected location
 
 ### Advanced Features
-- **Immersive 3D Impact Visualization**: Cinematic 3D fly-through of Lucknow landmarks
-- **Solutions Layer**: Solar potential visualization and green spaces mapping
-- **Personalized Location Analysis**: Address-specific environmental information
+- **Immersive 3D Impact Visualization**: Cinematic 3D fly-through of selected location landmarks
+- **Solutions Layer**: Solar potential visualization and green spaces mapping for any location
+- **Personalized Location Analysis**: Address-specific environmental information worldwide
 
 ## Current Implementation Status
 
@@ -32,21 +33,21 @@ The application is **FULLY FUNCTIONAL** with real Earth Engine data integration.
 - **Source**: `ECMWF/ERA5/DAILY` from Google Earth Engine
 - **Parameter**: `mean_2m_air_temperature` (2-meter air temperature)
 - **Time Range**: 1979-2020 (ERA5 reanalysis data availability)
-- **Spatial Coverage**: Global, focused on Uttar Pradesh, India
+- **Spatial Coverage**: Global coverage with location-specific analysis
 - **Temporal Resolution**: Daily data aggregated to annual means
 - **Units**: Converted from Kelvin to Celsius (15°C to 45°C range)
 
 #### Visualization Details
 - **Color Palette**: 18-color gradient from blue (cool) to red (hot)
-- **Temperature Range**: 15°C (blue) to 45°C (red/magenta)
-- **Geographic Focus**: Uttar Pradesh boundaries (23.9°N to 29.3°N, 77.1°E to 84.6°E)
-- **Map Center**: Lucknow (26.8467°N, 80.9462°E)
+- **Temperature Range**: Climate-appropriate ranges based on location latitude
+- **Geographic Focus**: Dynamic boundaries based on selected location
+- **Map Center**: Automatically centers on selected location
 
 #### AI Training Data
-- **Source**: Local `data.js` file with historical temperature averages
+- **Source**: Location-specific climate data with latitude-based temperature estimation
 - **Time Range**: 1980-2023 (44 years of data)
-- **Purpose**: Train TensorFlow.js model for future predictions
-- **Predictions**: 2040, 2050, 2060 temperature forecasts
+- **Purpose**: Train TensorFlow.js model for location-specific future predictions
+- **Predictions**: 2040, 2050, 2060 temperature forecasts for selected location
 
 ## Prerequisites
 

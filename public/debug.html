@@ -89,7 +89,7 @@
             
             try {
                 const map = new google.maps.Map(document.getElementById('map'), {
-                    center: { lat: 26.8467, lng: 80.9462 },
+                    center: { lat: 20, lng: 0 }, // World center for global access
                     zoom: 8,
                     mapTypeId: 'terrain'
                 });
@@ -97,11 +97,11 @@
                 addDebugInfo('Map created successfully');
                 updateStatus('Map initialized successfully!', 'success');
                 
-                // Add a marker
+                // Add a marker at world center
                 new google.maps.Marker({
-                    position: { lat: 26.8467, lng: 80.9462 },
+                    position: { lat: 20, lng: 0 },
                     map: map,
-                    title: 'Lucknow, Uttar Pradesh'
+                    title: 'Global Climate Visualization Center'
                 });
                 
                 addDebugInfo('Marker added to map');

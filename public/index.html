@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Climate Visualization - Uttar Pradesh</title>
+    <title>Global Climate Visualization</title>
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
@@ -24,8 +24,17 @@
 <body>
     <div class="container">
         <div class="sidebar">
-            <h1>Climate Visualization</h1>
-            <h2>Uttar Pradesh, India</h2>
+            <h1>Global Climate Visualization</h1>
+            <div id="location-search-section">
+                <h2>Select Location</h2>
+                <div class="location-search-container">
+                    <input type="text" id="location-search" placeholder="Search for any location worldwide..." autocomplete="off">
+                    <button id="search-location-btn">🔍 Search</button>
+                </div>
+                <div id="current-location" class="current-location">
+                    <strong>Current:</strong> <span id="current-location-name">No location selected</span>
+                </div>
+            </div>
             
             <div class="control-panel">
                 <div class="time-lapse-controls">
@@ -125,6 +134,9 @@
                     <h3>Future Prediction</h3>
                     <button id="predict-btn">Predict Future Temperatures</button>
                     <div id="prediction-results" class="hidden">
+                        <div class="prediction-location">
+                            <strong>Predictions for:</strong> <span id="prediction-location-name">Select a location</span>
+                        </div>
                         <div class="prediction-item">
                             <span class="year">2040:</span>
                             <span id="temp-2040" class="temp"></span>
@@ -176,7 +188,7 @@
                         <strong>Parameter:</strong> Mean 2m Air Temperature
                     </div>
                     <div class="info-item">
-                        <strong>Region:</strong> Uttar Pradesh, India
+                        <strong>Region:</strong> <span id="data-info-region">Select a location to view data</span>
                     </div>
                 </div>
             </div>

@@ -64,9 +64,9 @@ app.get('/test-anomaly-frontend', (req, res) => {
         let currentVisualizationMode = 'anomaly';
         
         function initMap() {
-            const uttarPradeshCenter = { lat: 26.8467, lng: 80.9462 };
+            const defaultCenter = { lat: 20, lng: 0 }; // World center for global access
             map = new google.maps.Map(document.getElementById('map'), {
-                center: uttarPradeshCenter,
+                center: defaultCenter,
                 zoom: 7,
                 mapTypeId: 'terrain'
             });
